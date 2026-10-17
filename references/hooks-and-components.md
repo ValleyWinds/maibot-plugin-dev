@@ -496,7 +496,7 @@ Host 从不拿 `name` 参与拼接或构造匹配文本，name 带斜杠也不�
   **前端「配置 → 命令权限」页会在渲染时再加一个 `/`**：`dashboard/src/routes/config/bot/CommandPermissions.tsx`
   用 `/{command.name}`（列表项）与 `/{selectedCommand.name}`（详情标题）渲染，斜杠是 JSX 裸文本而非字符串常量，
   所以只 grep `'/'` 字面量会漏掉。结果就是 `name="probe_plain"` 显示 `/probe_plain`（这正是规范假定前端补斜杠的由来），
-  而 `name="/probe_slash"` 显示成 **`//probe_slash`**。
+  而 `name="/probe_slash"` 显示成 **`//probe_slash`**（运行实例已实测：列表项与 `<h2>` 详情标题都是 `//probe_slash`）。
 
 所以「不带前导斜杠」有**两条真实代价**，不是纯惯例：① 权限键 / 禁用列表 / Hook 载荷里的标识符变成
 `plugin_id./name` 这种带 `./` 的怪串；② WebUI 命令权限页显示成 `//name`。Host 侧匹配本身不看 `name`，
