@@ -1,6 +1,6 @@
 # MaiBot 回复扩展（ReplyExtension）参考
 
-> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-15 逐行对照源码复核）
+> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-17 逐行对照源码复核）
 > 源码位置：`maibot_sdk/components.py`（装饰器）、`maibot_sdk/types.py`（组件信息）、
 > Host 侧 `src/plugin_runtime/host/reply_extensions.py`（两阶段调度与消息组校验）
 > SDK 仓库内最权威文档：`maibot-plugin-sdk/docs/reply_extensions.md`（协议与语音示例以它为准）

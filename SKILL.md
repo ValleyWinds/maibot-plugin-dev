@@ -10,7 +10,7 @@ agent_created: true
 
 本技能提供 MaiBot Plugin SDK 插件开发的核心知识与最佳实践，基于真实插件开发中踩过的坑提炼而成。涵盖 SDK 能力代理签名、组件装饰器、Hook 系统、配置模型、常见陷阱和插件模板。入口文件只放规范要点与陷阱索引，细节一律在 `references/` 下展开。
 
-> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-15 逐行对照源码复核）
+> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-17 逐行对照源码复核）
 > 逐版本变更摘要（相对本文件上一版基线）：
 > - **2.10.0**：新增 `@ReplyExtension` 回复扩展装饰器与 `ComponentType.REPLY_EXTENSION`，模型侧 `reply` 工具多出 `plugin_options` 参数。
 > - **2.11.0**：新增第 18 个能力代理 `ctx.webui`，唯一方法 `claim_upload(upload_id)`。

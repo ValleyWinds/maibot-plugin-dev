@@ -1,6 +1,6 @@
 # MaiBot Plugin SDK 能力代理 API 速查
 
-> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-15 逐行对照源码复核）
+> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-17 逐行对照源码复核）
 > 源码位置：`maibot-plugin-sdk/maibot_sdk/capabilities/*.py`、`maibot_sdk/context.py`
 > 文档：https://docs.mai-mai.org/plugin/api-reference
 

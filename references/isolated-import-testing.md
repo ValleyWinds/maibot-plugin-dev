@@ -3,7 +3,7 @@ name: isolated-import-testing
 description: 如何脱离 MaiBot 宿主，单独导入插件 plugin.py 并对纯函数做可复现验证（stub harness 套路）
 ---
 
-> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-15 逐行对照源码复核）
+> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-17 逐行对照源码复核）
 
 # 脱离宿主导入插件做纯函数验证
 

@@ -1,6 +1,6 @@
 # MaiBot 插件配置模型与 WebUI 配置渲染参考
 
-> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-15 逐行对照源码复核）
+> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-17 逐行对照源码复核）
 
 插件配置是一条完整链路：`config.py` 的 Pydantic 模型 → Runner 归一化落盘 `config.toml` →
 Host 生成 WebUI Schema → dashboard 表单渲染与保存 → 配置变更热更新回插件。

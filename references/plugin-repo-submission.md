@@ -5,7 +5,7 @@ description: MaiBot 插件发布与收录参考：plugin-repo 收录流程、Rel
 
 # 插件发布与收录（plugin-repo）
 
-> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-15 逐行对照源码复核）
+> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-17 逐行对照源码复核）
 > 收录规则来源：官方社区插件索引仓库 [Mai-with-u/plugin-repo](https://github.com/Mai-with-u/plugin-repo)（`README.md` / `CONTRIBUTING.md` / `VERSIONING.md`，2026-10-17 核对）
 > 与官方文档 `docs/zh/plugin/submission.md`；manifest 校验行为以 Host `src/plugin_runtime/runner/manifest_validator.py` 为准
 

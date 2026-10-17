@@ -1,6 +1,6 @@
 # MaiBot Hook 系统与组件装饰器参考
 
-> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-15 逐行对照源码复核）
+> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-17 逐行对照源码复核）
 > SDK 侧源码：`maibot-plugin-sdk/maibot_sdk/components.py`、`maibot_sdk/types.py`
 > Host 侧源码：`src/plugin_runtime/host/hook_dispatcher.py`、`host/component_registry.py`、
 > `src/plugin_runtime/component_query.py`，以及 6 个 Hook 规格注册模块

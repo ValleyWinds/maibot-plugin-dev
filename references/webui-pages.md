@@ -1,6 +1,6 @@
 # MaiBot 插件 WebUI 页面扩展
 
-> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-15 逐行对照源码复核）
+> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-17 逐行对照源码复核）
 
 本文件已按当前源码逐项核对：权威声明模型 `src/plugin_runtime/webui_schema.py`、页面网关
 `src/webui/routers/plugin/webui_extensions.py`、上传存储 `src/plugin_runtime/upload_store.py`、
