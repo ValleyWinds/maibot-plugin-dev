@@ -136,11 +136,18 @@ import importlib.util, sys
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent
+PLUGIN = BASE.parent / "<repo>"          # 插件目录（含 plugin.py）
 sys.path.insert(0, str(BASE / "stubs"))
 
-spec = importlib.util.spec_from_file_location("ssp_plugin", BASE.parent / "<repo>" / "plugin.py")
+pkg = "ssp_plugin"
+spec = importlib.util.spec_from_file_location(
+    pkg,
+    PLUGIN / "plugin.py",
+    submodule_search_locations=[str(PLUGIN)],   # 相对导入必需
+)
 mod = importlib.util.module_from_spec(spec)
-sys.modules["ssp_plugin"] = mod          # 必须先注册，模块内部若有自引用才不炸
+mod.__path__ = [str(PLUGIN)]                   # 同上，缺了就是 ImportError
+sys.modules[pkg] = mod            # 必须先注册，模块内部若有自引用才不炸
 spec.loader.exec_module(mod)
 
 mod._split_text_at_brackets("...")       # 直接调纯函数
@@ -151,6 +158,10 @@ mod._split_text_at_brackets("...")       # 直接调纯函数
 - **`pydantic` 不一定需要**。插件普遍写成 `try: from maibot_sdk import Field, HookHandler, PluginConfigBase / except ImportError:` 回退到 pydantic。
   只要 stub 里**同时提供** `Field` 和 `PluginConfigBase`，走的就是 stub 分支，无需安装 pydantic。
   反之若只提供一部分，就可能落进 `except` 分支去找 pydantic 而失败。
+- **插件目录内的相对导入会让裸 `spec_from_file_location` 直接失败**。插件模板（`plugin-template/plugin.py`）就是
+  `from .config import MyPluginConfig` 这种写法；不设 `submodule_search_locations` 且不给 `mod.__path__` 赋值，
+  `exec_module` 时抛 `ImportError: attempted relative import with no known parent package`。
+  这不是插件 bug，是加载方式不对——照上面第 3 步写即可。
 - **注解在函数定义时求值**。`def f(self, task_config: TaskConfig)` 这种注解会在 `def` 执行时求值（没有 `from __future__ import annotations`），
   所以 `TaskConfig`、`LLMOrchestrator`（含作为基类被继承）**必须真实存在**，不能省略。
 - **decorator 必须是「可调用 → 返回 decorator」或「可调用」两种形态都兼容**：`@Command("name", pattern=...)` 和 `@HookHandler("hook", name=...)`
@@ -181,17 +192,26 @@ from pathlib import Path
 sys.path.insert(0, str(Path("<sdk-repo>")))   # SDK 源码根目录（含 maibot_sdk/）
 PLUGIN = Path("<plugin_dir>")
 
-spec = importlib.util.spec_from_file_location("plugin_under_test", PLUGIN / "plugin.py")
+pkg = "plugin_under_test"
+spec = importlib.util.spec_from_file_location(
+    pkg,
+    PLUGIN / "plugin.py",
+    submodule_search_locations=[str(PLUGIN)],   # 插件目录内有相对导入时必需
+)
 mod = importlib.util.module_from_spec(spec)
-sys.modules[spec.name] = mod
+mod.__path__ = [str(PLUGIN)]                   # 缺了会 ImportError: attempted relative import
+sys.modules[pkg] = mod
 spec.loader.exec_module(mod)
 
 plugin = mod.create_plugin()  # 直接实例化、直接断言
 ```
 
-SDK 2.14.0 运行时只依赖 `pydantic` + `msgpack`（PIL 视插件而定），用 uv 临时环境补齐即可，不污染系统 Python：
+⚠️ `build_plugin_default_config` 不在包根导出，从 `maibot_sdk.config` 导入（`from maibot_sdk import build_plugin_default_config` 会 ImportError）。
+
+SDK 2.14.0 运行时真正需要的第三方依赖只有 `pydantic`（`maibot_sdk/config.py` / `types.py` / `messages.py` 等直接 import），PIL 视插件而定。`msgpack` 只是 `pyproject.toml` 的声明项，SDK 源码里没有任何一处 import 它，本地缺了也能跑通——真正使用 msgpack 的是 Host 侧 `src/plugin_runtime/protocol/codec.py` 的插件进程间 RPC 编解码，与这条独立导入验证路线无关（SDK 自带的 `docs/guide.md` 重复了「运行时依赖 pydantic + msgpack」的过时说法，勿被带偏）。用 uv 临时环境补齐即可，不污染系统 Python：
 
 ```bash
+# msgpack 非必需，仅是声明项，多装无害
 uv run --with pydantic --with msgpack --with pillow python verify.py
 ```
 
@@ -199,20 +219,21 @@ uv run --with pydantic --with msgpack --with pillow python verify.py
 
 | 断言 | 依据 |
 | --- | --- |
-| 生命周期三方法签名与参数个数：`on_load()` / `on_unload()` 0 参，`on_config_update` 3 参 | `maibot_sdk/plugin.py` 的 `MaiBotPlugin.on_load` / `on_unload` / `on_config_update`（`scope` / `config_data` / `version`） |
-| `create_plugin()` 可调用并返回 `MaiBotPlugin` 子类实例 | SDK 约定的插件入口约定 |
+| 生命周期三方法**被覆盖**（不只是签名对）：`on_load()` / `on_unload()` 0 参、`on_config_update` 3 参（`scope` / `config_data` / `version`） | `maibot_sdk/plugin.py` 的 `MaiBotPlugin.on_load` / `on_unload` / `on_config_update`；Host 侧 `plugin_loader.py` 的 `_validate_sdk_plugin_contract` 检查 `type(instance).on_load is MaiBotPlugin.on_load`，未覆盖直接 `TypeError` |
+| `create_plugin()` 可调用并返回 `MaiBotPlugin` 子类实例 | `_validate_sdk_plugin_contract` 的 `isinstance(instance, MaiBotPlugin)` |
+| `get_config_reload_subscriptions()` 可调用且不抛 | 同上，契约校验会调用它；`config_reload_subscriptions` 写成字符串会 `TypeError` |
 | 每个组件方法带 `__maibot_component_info__`，元数据含 `name`、`type`、`handler_name` | `maibot_sdk/components.py` 的 `collect_components` |
 | `build_plugin_default_config(config_model)` 成功（所有字段有默认值） | `maibot_sdk/config.py` 的 `build_plugin_default_config`，字段无默认值时抛 `ValueError` |
-| `config.toml` 可被 `config_model.model_validate` 解析，且含 `[plugin]` 节的 `config_version` | `maibot_sdk/config.py` 的 `extract_plugin_config_version` |
+| `config.toml` 可被 `tomllib` 解析并 `config_model.model_validate` 通过，含 `[plugin]` 节的 `config_version` | `maibot_sdk/config.py` 的 `extract_plugin_config_version`（缺失抛 `PluginConfigVersionError`）；Host 侧 `runner_main.py` 的 `_load_plugin_config` 用 `tomllib.load` |
 | manifest 必填字段齐全、无多余字段 | `src/plugin_runtime/runner/manifest_validator.py` 的 `PluginManifest`（基类 `_StrictManifestModel` 是 `extra="forbid"`，多一个字段就校验失败） |
 | `manifest_version` 为 `2`；`version` / 区间上下界都是严格三段式语义版本 | `PluginManifest.manifest_version`（`Literal[2]`）与 `VersionComparator.is_valid_semver` |
 | `sdk` 区间覆盖 2.14.0、`host_application` 区间覆盖 1.3.9 | `PluginManifest` 的 `ManifestVersionRange`（闭区间，`min_version > max_version` 直接失败） |
 | `author` / `urls.repository` 存在且是 http(s) URL | `ManifestAuthor` / `ManifestUrls` |
-| `capabilities` 非空、逐个在 plugin.py 中有对应 `ctx.*` 调用点 | `PluginManifest._validate_capabilities`；Host 侧只放行已声明能力，未声明的调用会被拒 |
+| `capabilities` 字段存在（缺失即校验失败），无空字符串项、无重复项；其中每个能力都要能在 plugin.py 里找到对应 `ctx.*` 调用点 | `PluginManifest.capabilities`（`List[str]` 无默认值，缺失报 missing）；`_validate_capabilities` 只校验非空项与去重——**空数组合法**，无能力时写 `[]` |
 
 manifest 必填清单（`PluginManifest`）：`manifest_version`、`version`、`name`、`description`、`author`（`name` + `url`）、
 `license`、`urls`（`repository`）、`host_application`、`sdk`、`capabilities`、`i18n`、`id`；
-可选：`dependencies`、`llm_providers`、`plugin_type`、`display`、`changelog`。
+可选（有默认值，可省略）：`dependencies`、`llm_providers`、`plugin_type`、`display`、`changelog`。
 
 ⚠️ `capabilities` 与代码调用点要**双向核对**：manifest 声明了但代码没用到 = 冗余声明；代码调了但 manifest 没声明 = 运行时被 Host 拦。
 少数 Host 侧内部能力（如消息路由 / 网关状态）不需要也无法写进 `capabilities`。

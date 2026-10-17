@@ -236,7 +236,8 @@ runtime_dir = str(self.ctx.paths.runtime_dir)
 授权能过，死在运行时调用：`host/capability_service.py` 查注册表失败即返回
 `E_METHOD_NOT_ALLOWED`「未注册的能力: {capability}」。
 
-> 官方文档 manifest 示例里的 `"send_message"` 不是合法能力名——真实名字是 `send.text` 等带点号分层的形式。
+> 能力名是逐项点号分层的（`send.text` / `llm.generate` 等），**没有 `send_message` 这种聚合名**。
+> 官方文档 `docs/zh/plugin/manifest.md` 的示例现已改为具体能力名（`send.text` / `send.emoji` / `config.get`）。
 
 **能力名以主程序源码为准**（`src/plugin_runtime/capabilities/registry.py`，当前 76 项）：
 - `send.text` / `send.emoji` / `send.image` / `send.forward` / `send.hybrid` / `send.command` / `send.custom`
@@ -366,8 +367,9 @@ class MyPlugin(MaiBotPlugin):
 ### 陷阱 12：配置缺少 `[plugin].config_version` —— 插件进入"仅配置管理"状态
 
 **现象**：插件能过 manifest 校验，但启动日志报
-`插件配置版本非法: 插件配置文件缺少 plugin.config_version 版本号，当前版本策略不再兼容无版本配置`；
-所有调用返回 `E_BAD_PAYLOAD`「插件配置错误，业务暂停」。
+`插件 {id} 配置错误，仅加载配置管理: 插件配置文件缺少 plugin.config_version 版本号，当前版本策略不再兼容无版本配置`
+（冒号后被括号带出的是 `PluginConfigVersionError` 自身的文案；另一处入口会先打
+`插件配置版本检查失败: {exc}`）；所有调用返回 `E_BAD_PAYLOAD`「插件配置错误，业务暂停」。
 
 **根因**（`runner_main.py` `extract_plugin_config_version` + `_normalize_plugin_config`）：
 缺 `[plugin]` 节抛 `PluginConfigVersionError`「插件配置文件缺少 [plugin] 配置节，且必须提供 plugin.config_version 版本号」；
@@ -402,7 +404,8 @@ config_version = "1.0.0"
 （`author.url` / `urls.repository` / `config_version` 三个坑一次到位），再删减不需要的字段。
 
 **验证来源**：主程序 `src/plugin_runtime/runner/runner_main.py` `extract_plugin_config_version` /
-`_normalize_plugin_config` / `_register_plugin` / invoke 入口的 `config_error` 分支；
+`_normalize_plugin_config`（`插件配置版本检查失败` 日志）/ `_prepare_plugin_activation`
+（`插件 {id} 配置错误，仅加载配置管理` 日志）/ invoke 入口的 `config_error` 分支；
 `src/plugin_runtime/protocol/envelope.py`
 
 ---
@@ -418,7 +421,8 @@ config_version = "1.0.0"
 - 都没传时落到默认任务 `utils`（`_DEFAULT_PLUGIN_LLM_TASK`）
 
 **关键事实**：
-- 常见任务名：`replyer`（回复模型）、`planner`（规划）、`utils`（小任务）、`memory`、`mid_memory`、`learner`、`vlm` 等
+- 常见任务名：`replyer`（回复模型）、`planner`（规划）、`utils`（小任务）、`memory`、`mid_memory`、`learner`、`vlm`、`fast_model`（表达方式选择、回复断句等轻量任务走它）等
+- **任务集合 = `src/config/model_configs.py` 的 `ModelTaskConfig` 字段**，实际可用性取决于各环境 `config/model_config.toml` 的 `[model_task_config.*]` 配置
 - **没有 `reply` 这个任务名**！回复模型任务默认叫 `replyer`（各环境可能不同，取决于 model_config.toml）
 - `ctx.llm.get_available_models()` 返回可用任务名列表（`List[str]`），可在 `on_load` 校验配置、或做成命令给用户自查
 
@@ -486,14 +490,20 @@ await ctx.llm.generate(prompt="...", model="replyer")
 
 **现象 A**：MaiBot 升级后插件突然加载不了，日志报 `Host 版本不兼容`。
 
-**根因**：`host_application.max_version` 写成了具体小版本（如 `1.99.99`），Host 升到 1.3.x 直接超出区间。
+**根因**：`host_application.max_version` 写成了低于当前 Host 的版本（如 `1.2.99`），Host 升到 1.3.x 直接超出区间。
 版本区间校验规则（`manifest_validator.py` `_validate_runtime_compatibility`）：
 - Host **高于** `max_version` 但**主次版本相同**（仅补丁号超出）→ warning，插件照常加载（`is_same_major_minor_higher_version`）
 - Host 其余情况超出区间（如 1.2.x 插件遇 1.3.x）→ error，插件被阻止加载
 - SDK 超出区间 → **一律 error**，无容忍档
 
-**正确做法（官方最佳实践）**：`max_version` 写 `999.999.999`，只认真约束 `min_version`；
-不想约束下界就写 `0.0.0`。官方内置插件就是这么写的。别把"新版本还能不能跑"交给版本号，交给实际测试。
+**正确做法（两条线两套口径，别混用）**：
+- **`host_application`**：`max_version` 写 `999.999.999`，只认真约束 `min_version`。依据：Host 有同主次版本的补丁级容忍规则，超界多为 warning（见上），别把"新版本还能不能跑"交给版本号，交给实际测试。
+- **`sdk`**：`max_version` 锁在当前主版本线内（如 `2.99.99`），**不要**写 `999.999.999`。依据：SDK 超出区间**一律 error、没有容忍档**（`_validate_runtime_compatibility` 对 SDK 没有任何豁免分支），而插件确实依赖 SDK 的接口形状——把上界放开等于声明支持根本不兼容的大版本，插件会被放进必炸的环境。
+
+两处官方来源**各自实际写的值不同**，不要笼统说"官方就是这么写的"：内置插件
+`src/plugins/built_in/plugin_management/_manifest.json` 写 `host_application: 1.0.0 ~ 999.999.999`、
+`sdk: 2.0.0 ~ 2.99.99`；上游 `MaiM-with-u/plugin-repo` 的 `CONTRIBUTING.md` 示例写
+`host_application: 1.0.0 ~ 1.99.99`、`sdk: 2.0.0 ~ 2.99.99`。两条线的 `min_version` 都是真实下限，都不是 `0.0.0`。
 
 **现象 B**：发布了新 Release，但插件市场详情页显示「有 N 个发布版本未通过校验」，用户装不了。
 
@@ -507,7 +517,9 @@ WebUI 调试配置里也有开关）开启后跳过 `host_application` / `sdk` �
 `llm_providers` 一致性等校验照旧。仅作排查用，别长期开。
 
 **验证来源**：主程序 `src/plugin_runtime/runner/manifest_validator.py` `_validate_runtime_compatibility` /
-`is_same_major_minor_higher_version`、`src/plugin_runtime/compat_policy.py`
+`is_same_major_minor_higher_version`、`src/plugin_runtime/compat_policy.py`；
+内置插件 `src/plugins/built_in/plugin_management/_manifest.json`（两条线的实际取值）；
+上游 `MaiM-with-u/plugin-repo` `CONTRIBUTING.md`（manifest 版本区间示例）
 
 ---
 
@@ -830,12 +842,25 @@ modified["output_items"] = []            # 置空即可，Host 会反序列化�
 return {"action": "continue", "modified_kwargs": modified}
 ```
 
-### ⚠️ Timing Gate 复用 planner hook，别误伤
+### ⚠️ planner hook 还被别的链路复用，清空前先判工具集合
 
-Timing Gate 也用 `maisaka.planner.*`，此时载荷里的工具只有 `continue` / `no_action` / `wait`
-（`wait` 是内置工具，`src/maisaka/builtin_tool/wait.py`）。**判定为"只有 Timing Gate 控制工具"时
-必须直接 `return None`**，否则清空 `tool_definitions` / `output_items` 会把 Timing Gate 的判定打断
-（上游插件专门为此加了两处保护：判 `tool_definitions` 与判 `output_items` 的工具名集合）。
+`maisaka.planner.*` 不只服务主对话规划，其它链路也复用同一对 Hook。**判定"这一轮不该动"时
+必须直接 `return None`**，否则清空 `tool_definitions` / `output_items` 会把别的链路的判定打断
+（上游插件专门为此加了两处保护：分别判 `tool_definitions` 与 `output_items` 的工具名集合）。
+
+怎么判：从 Hook 载荷的 `tool_definitions` / `output_items` 里抽出工具名（function 结构的 `name` 字段），
+与"这一轮允许出现的工具集合"做子集比较，命中就退出。当前 Host 的内置工具全集见
+`src/maisaka/builtin_tool/__init__.py` 的 `BUILTIN_TOOL_ENTRIES`：`wait`、`reply`、
+`view_forward_message`、`query_memory`、`query_image_memory`、`query_person_profile`、`send_emoji`、
+`show_emoji_list`、`tool_search`、`subagent` / `subagent_status` / `subagent_stop`、`read_tool_result`、
+`fetch_history`、`switch_chat`（是否暴露还受 `global_config.experimental` / `emoji` 等开关与会话范围影响）。
+
+> ⚠️ **不要凭传闻写死"控制工具名清单"**。`no_action` / `continue` 这类名字在当前 Host 源码里
+> **不是任何工具声明**：`grep -rn "no_action" MaiBot/src` 只命中 `mcp_module/manager.py` 的 MCP 保留名集合
+> （`BUILTIN_TOOL_NAMES`，用于拒绝 MCP 工具重名注册）与 `chat.reply_timing.no_action_backoff_*` 配置项；
+> `continue` 只作为 `maisaka/reasoning_engine.py` 的 `CycleEnd` reason 值存在。
+> 上游插件的控制工具名常量来自它自己的环境，换主程序版本或换宿主时**必须重新核对**，
+> 否则子集判断会误判为"只有控制工具"而放弃改写（或反过来误伤）。
 
 ### 顺带一个跨进程事实
 
@@ -879,6 +904,9 @@ Timing Gate 也用 `maisaka.planner.*`，此时载荷里的工具只有 `continu
   **只有默认配置的版本号"大于"磁盘上的版本号时才会重建**。
 - **重建语义**（`rebuild_plugin_config_data` + 字段覆盖）：以最新默认配置为骨架，递归覆盖**类型匹配且仍然存在**
   的旧值，并**跳过 `config_version` 本身** → 用户自定义值保留，已删字段被清掉。
+- **落盘层同样会清理残留**（Host `runner_main.py` `_save_plugin_config` + `_has_extra_config_keys`）：写回时
+  若检测到「磁盘上有、而新配置里没有的键」，会放弃保注释的增量 merge（`_merge_plugin_config_document`），
+  直接**整文件重写**。所以即使不升版本号，残留字段也会在下次配置写盘时被清掉——代价是丢掉 `config.toml` 里的注释。
 
 ### ⚠️ 埋雷：把 `config_version` 改小
 

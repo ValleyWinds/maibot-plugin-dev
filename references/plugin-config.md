@@ -6,7 +6,7 @@
 Host 生成 WebUI Schema → dashboard 表单渲染与保存 → 配置变更热更新回插件。
 本文按这条链路组织，事实来源为 `maibot_sdk/config.py`、`maibot_sdk/plugin.py`、
 `src/plugin_runtime/runner/runner_main.py`、`src/webui/routers/plugin/config_routes.py`、
-`dashboard/src/routes/plugin-config.tsx`。
+`dashboard/src/routes/plugin-config.tsx`、`dashboard/src/lib/plugin-api/config.ts`。
 
 ---
 
@@ -27,17 +27,24 @@ class MyPlugin(MaiBotPlugin):
 
 ### 必须遵守的三条硬规则
 
-1. **所有字段必须有默认值**（`default` 或 `default_factory`）。`build_plugin_default_config` 直接实例化模型，
-   无默认值即抛：`插件配置模型 {name} 需要为所有字段提供默认值，当前无法构造默认配置`。
-   `list` / `dict` / 嵌套模型等可变类型一律用 `default_factory`（否则多个实例共享同一可变对象）。
+1. **所有字段必须有默认值**（`default` 或 `default_factory`）。生成默认配置（`build_plugin_default_config`）
+   与导出 WebUI Schema（`generate_plugin_config_schema`，内部同样直接实例化模型）都要求模型能零参构造，
+   缺默认值即抛：`插件配置模型 {name} 需要为所有字段提供默认值，当前无法构造默认配置`。
+   `list` / `dict` / 嵌套模型等可变类型建议显式用 `default_factory`——pydantic v2 对默认值做 smart copy，
+   老框架下「多个实例共享同一可变对象」的问题已不存在，用 factory 的理由是可变类型的构造语义更清晰。
 2. **不要把字段放在模型根级**。SDK 的 `generate_plugin_config_schema` 会把根级扁平字段归入一个名为
    `general` 的节（`"title": "通用设置"`），而 TOML 里它们位于根级、并不存在 `[general]` 表。
    所有字段都放进命名 `PluginConfigBase` 子类节（如 `infos_section: InfosSectionConfig`），
    对应 TOML 结构 `[infos_section]` / `[[infos_section.infos]]`。
 3. **`[plugin]` 节必须含 `config_version`**，且模型要有同名字段提供默认值（见第 4 节）。
 
-> Host 1.3.9 已对根级字段做了兼容（`_fold_root_fields_into_virtual_general` 读取时折进 `general`、
-> `_unfold_virtual_general_into_root` 保存时还原回根级），表单读写不再错位。但跨 Host 版本行为不一致，
+> Host 1.3.9 已对根级字段做了兼容（`config_routes.py` 的 `_fold_root_fields_into_virtual_general` 读取时折进
+> `general`、`_unfold_virtual_general_into_root` 保存时还原回根级），表单读写不再错位。但折叠只认「虚构节」：
+> `_get_virtual_general_field_names` 要求四重条件同时成立——Schema 含 `general` 节、默认配置没有真实
+> `general` 表、当前（归一化）配置也没有真实 `general` 表、且该节全部字段名都是默认配置的根级键。
+> 插件真实声明了 `general` 节时任一条件不满足，不折不还原。另有一条特殊处理：根级 `plugin` 若被声明成
+> 普通 dict，也会出现在虚构节字段里，折叠时对它**只复制不移动**——WebUI 要靠根级 `config.plugin.enabled`
+> 判断启用状态，保存时 `general.*` 优先于根级键还原，复制不会产生冲突。即便如此，跨 Host 版本行为仍不一致，
 > 且根级字段在 TOML 里没有归属节，仍应全部放进命名节。
 
 ### 宿主保留键 `[plugin].enabled`
@@ -54,10 +61,12 @@ class MyPlugin(MaiBotPlugin):
 
 | 属性 | 作用 | 缺省 |
 |------|------|------|
-| `__ui_label__` | 节标题 | 字段名（即 TOML 节名） |
-| `__ui_icon__` | 图标名 | `None` |
-| `__ui_order__` | 排序序号，越小越靠前 | 字段在模型中的声明序号 |
+| `__ui_label__` | 节标题 | 字段名（即 TOML 节名，`or section_name` 兜底） |
+| `__ui_icon__` | 图标名 | `""`（基类定义空串；写进 Schema 时空串被 `or None` 归一为 `null`） |
+| `__ui_order__` | 排序序号，越小越靠前 | `0`（基类 `PluginConfigBase` 定义了 `__ui_order__: ClassVar[int] = 0`，`_build_section_schema` 的 `getattr(config_class, "__ui_order__", fallback_order)` 永远能继承到这个 0，按声明序号兜底的路径实际轮不到） |
 | `__ui_i18n__` | 节多语言文本 | 空 |
+
+⚠️ 因此**不显式声明的多个节全部并列 0**，渲染顺序不确定；需要排序就必须逐节写 `__ui_order__`。
 
 节描述**来自配置类的 docstring**（`_build_section_schema` 取 `config_class.__doc__`）。
 docstring 只写用户能懂的一句话（如「插件基础配置。」），开发者的技术注释用 `#` 注释放字段上方。
@@ -65,12 +74,12 @@ docstring 只写用户能懂的一句话（如「插件基础配置。」），�
 ### 字段级 `json_schema_extra`
 
 ```python
-enabled: bool = Field(
+daily_digest: bool = Field(
     default=True,
-    description="插件总开关。",           # 列表项 label 的缺省值，也作 WebUI 描述
+    description="是否开启每日摘要推送。",   # 列表项 label 的缺省值，也作 WebUI 描述
     json_schema_extra={
-        "label": "启用插件",              # 缺省 = 英文字段名
-        "hint": "打开后插件才会工作。",
+        "label": "每日摘要",              # 缺省 = 英文字段名
+        "hint": "开启后每天定时推送摘要。",
         "placeholder": "",
         "order": 0,
         "group": "",                     # 前端分组
@@ -111,7 +120,12 @@ enabled: bool = Field(
 | `Literal[...]` | `select` | `select` | 单选下拉 |
 | `list[PluginConfigBase]` | `array` | `list` | 列表编辑器（`item_type: object`，`item_fields` 描述每项字段） |
 | `list[str]` / `list[int]` | `array` | `list` | 简单列表 |
-| `dict` / `PluginConfigBase` | `object` | `json` | JSON 编辑 |
+| `dict` / `PluginConfigBase`（节内嵌套） | `object` | `json` | JSON 编辑 |
+
+限定：`PluginConfigBase` 字段若声明在**模型顶层**（根模型里），不会走到这一行——
+`generate_plugin_config_schema` 先把顶层 `PluginConfigBase` 字段识别为**独立配置节**
+（交给 `_build_section_schema`，对应 TOML 的 `[section]`，如第 7 节示例的 `plugin: PluginConfig`）；
+只有**节内嵌套**的 `PluginConfigBase` 字段才按本行落 object/json。
 
 `ui_type` 可用 `x-widget` 覆盖为 `textarea` / `slider` / `password` 等；`textarea`、`list`、`slider`
 在表单里占整行（`getFieldGridClassName`）。
@@ -131,18 +145,35 @@ enabled: bool = Field(
 
 ## 3. WebUI 渲染与保存链路
 
+配置接口的路由定义在 `src/webui/routers/plugin/config_routes.py`（路径形如 `/config/{plugin_id}/...`），
+经 `src/webui/routers/plugin/__init__.py` 的 `prefix="/plugins"` 与 `src/webui/routes.py` 的
+`prefix="/api/webui"` 两级挂载，完整前缀是 **`/api/webui/plugins/config/`**
+（前端对应 `dashboard/src/lib/plugin-api/config.ts` 的 `API_BASE`）。
+
 ```
-GET /api/plugin/config/{id}/bundle
+GET /api/webui/plugins/config/{plugin_id}/bundle
   → runtime.inspect_plugin_config（Runner 归一化后的配置 + Schema）
-  → 根级扁平字段折叠进 general 节
+  → 根级扁平字段折叠进 general 节（_fold_root_fields_into_virtual_general）
   → {schema, config, raw_config, message}
 
 前端 SectionRenderer：getNestedRecord(config, section.name) 取值，按 order 排序、过滤 hidden
-  → PUT /api/plugin/config/{id}（结构化补丁，deep_merge 到当前配置上，先经运行时校验）
-  → PUT /api/plugin/config/{id}/raw（整份 TOML 源码，保存前 tomlkit 解析校验）
+  → PUT /api/webui/plugins/config/{plugin_id}（结构化补丁，经 _merge_plugin_config_patch
+    合并到运行时归一化配置上，保存前经运行时模型校验）
+  → PUT /api/webui/plugins/config/{plugin_id}/raw（整份 TOML 源码，保存前只做 tomlkit 语法校验）
 ```
 
-- 保存前会经运行时 `inspect`/`validate` 一遍，配置非法返回 400 并写回 `config_error`
+同前缀下的其余端点：`GET …/schema`、`GET …/raw`、`GET …/{plugin_id}`（单查配置）、
+`POST …/reset`（重置配置）、`POST …/toggle`（启停插件）。
+
+两条保存路径的校验强度**不同**，不要混为一谈：
+
+- **结构化保存**（`config_routes.py` 的 `update_plugin_config`）：保存前经运行时 `inspect` 取归一化配置，
+  `_merge_plugin_config_patch` 合并补丁，再 `_validate_plugin_config_via_runtime` 按插件配置模型校验；
+  非法即返回 **400**，不落盘
+- **原始 TOML 保存**（`update_plugin_config_raw`）：保存前只做 `tomlkit.loads` **语法**校验（语法错误才 400）；
+  语法合法、模型层非法的配置**照样落盘并返回 200**，随后交 `integration.py` 的 `apply_plugin_config` 解析，
+  归一化失败时以 `runtime_status="config_error"` 与「配置仍有错误，插件业务暂停」的 note 反馈，
+  错误写回 `config_error`、业务暂停
 - 每次保存/重置都会先备份（见第 6 节）
 - 原始 TOML 编辑入口适合排查「表单里看不到的键」；结构化表单适合日常维护
 
@@ -172,9 +203,15 @@ GET /api/plugin/config/{id}/bundle
 改回 1.5.0 发一版，老用户的配置停留在 2.0.0 → 不触发重建 → 已删字段永远回不来。
 版本号只升不降，要回退配置结构就换插件 id（新 id 不继承旧配置）。
 
-`compare_versions` 是**纯点分整数列表比较，不是语义化版本**：
+`compare_versions`（`config/config_utils.py`）是**纯点分整数列表比较，不是语义化版本**，段数不一致时
+两个方向的后果不同：
 
-- `1.0` vs `1.0.0` → 判为「有更新」（列表 `[1,0] < [1,0,0]`），每次启动都重建并落盘。版本号一律写三段式
+- **磁盘段数少**（磁盘 `1.0`、默认 `1.0.0`）→ 列表比较 `[1,0] < [1,0,0]` 判为「有更新」→ 触发重建。
+  但这是**一次性归一化，不是每次启动都重写**：重建后的 `config_version` 落的是默认值
+  （`_overlay_plugin_config_fields` 跳过该键、不取旧值），本次落盘后两边版本一致，下次比较即相等、不再重建
+- **磁盘段数多**（默认 `1.0`、磁盘 `1.0.0`）→ `[1,0] > [1,0,0]` 为 False → 判为「无更新」→
+  **永不重建**，旧结构原样归一化——这是另一种静默失效：默认结构变了也永远不会迁移
+- 所以版本号一律写三段式，且默认与磁盘两侧段数保持一致
 - 带 `-beta`/`rc1` 之类后缀会 `ValueError`，被当成配置错误处理
 
 ### 重建时保留什么
@@ -187,8 +224,14 @@ Host 版 `rebuild_plugin_config_data` 以**最新默认配置为骨架**，只�
 - 保留的字段 → 用户值优先；但类型不匹配时跳过、回落默认值
 - `config_version` 始终取默认值
 
-Runner 侧写回 `config.toml` 时走 `_merge_plugin_config_document`：以 tomlkit「更新已有键、补充缺失键」
-的方式尽量保留用户手写的注释和格式；保留失败（如用户写了非标准 TOML）才整文件重写。
+Runner 侧写回 `config.toml` 走 `_save_plugin_config`：默认用 tomlkit 读入既有文档，交给
+`_merge_plugin_config_document` 按「更新已有键、补充缺失键」增量合并，尽量保留用户手写的注释和格式。
+两种情况会放弃合并、**整文件重写**（注释与自定义格式随之丢失）：
+
+- **新配置删除了磁盘上已存在的键**：`_has_extra_config_keys` 发现旧文件里有最新配置不存在的键时，
+  直接跳过增量合并走整文件重写——否则只做「更新已有键、补充缺失键」会把已删的旧键残留在文件里。
+  版本升级重建删过字段的配置，写回时必然命中这一条
+- **保留注释失败**：tomlkit 读入或合并既有文档抛异常（如用户写了非标准 TOML），回退整文件重写
 
 ---
 
@@ -217,7 +260,11 @@ class MyPlugin(MaiBotPlugin):
 async def on_config_update(self, scope: str, config_data: dict, version: str) -> None:
     # scope: "self" / "bot" / "model"
     # config_data: 该 scope 的最新配置（bot/model 时是主程序配置，不是插件配置）
-    # version: 配置版本号；bot/model 广播时 Host 传的是空串
+    # version: 恒为空串——Host 所有派发路径传的都是空版本号：
+    #   integration.py 的 apply_plugin_config 调 notify_plugin_config_updated 时显式 config_version=""
+    #   （scope="self" 就走这条），_broadcast_config_reload（bot/model 广播）同样显式传 ""，
+    #   supervisor.py 的 notify_plugin_config_updated 形参默认值也是 ""；
+    #   Runner 的 _handle_config_updated 原样转发，插件侧拿不到真实版本号，不要依赖它做版本比较
 ```
 
 `on_config_update` 是抽象生命周期方法，未实现时 `plugin_loader` 直接抛
@@ -255,7 +302,11 @@ CONFIG_SCHEMA_VERSION = "1.0.0"
 
 
 class PluginConfig(PluginConfigBase):
-    """插件基础配置。"""
+    """插件基础配置。
+
+    只声明 config_version 一个字段；[plugin].enabled 是宿主保留键，
+    模型无需也不应声明（见第 1 节说明）。
+    """
 
     __ui_label__: ClassVar[str] = "插件设置"
     __ui_order__: ClassVar[int] = 0
@@ -268,11 +319,6 @@ class PluginConfig(PluginConfigBase):
         default=CONFIG_SCHEMA_VERSION,
         description="配置版本，请勿手动修改。",
         json_schema_extra={"disabled": True, "hidden": True, "label": "配置版本", "order": 99},
-    )
-    enabled: bool = Field(
-        default=True,
-        description="插件总开关。",
-        json_schema_extra={"hint": "打开后插件才会工作。", "label": "启用插件", "order": 0},
     )
 
 
@@ -316,7 +362,6 @@ class MyConfig(PluginConfigBase):
 
 [plugin]
 config_version = "1.0.0"
-enabled = true
 
 [infos_section]
 enabled = false
@@ -337,8 +382,9 @@ WebUI Schema 里 `sections` 含两个键 `plugin` 与 `infos_section`（顺序�
 | 启动报「当前版本策略不再兼容无版本配置」 | `config.toml` 缺 `[plugin].config_version` | 补上，与模型默认值一致 |
 | 插件在列表里但业务不工作、日志有「配置错误，仅加载配置管理」 | `config_error`：版本缺失 / 模型校验失败 | WebUI 打开该插件配置页看 `config_error`，修正保存后自动恢复 |
 | 改字段名后用户配置没变 | 版本号没上调，未触发重建 | 上调 `config_version`（只升不降） |
-| 每次重启配置都被重写 | 版本号段数不一致（如 `1.0` vs `1.0.0`） | 统一三段式版本号 |
-| 表单里某些字段不显示 | `hidden: True`，或字段在模型根级 | 检查 `json_schema_extra`，字段移入命名节 |
+| 升级版本号后配置被重写了一次 | 版本号段数不一致（磁盘 `1.0`、默认 `1.0.0`）：判为升级触发**一次性**重建并落盘（重建后两边一致，不会每次重启都重写） | 统一三段式、段数一致 |
+| 改了默认版本号/结构但用户配置迟迟不迁移 | 反方向段数不一致（默认 `1.0`、磁盘 `1.0.0`）：`compare_versions` 判「无更新」→ **永不重建**，静默失效 | 默认版本号改成段数不少于磁盘侧的三段式并上调 |
+| 表单里某些字段不显示 | `hidden: True`（字段在模型根级不是原因：Host 1.3.9 会把根级字段折进 `general` 节正常显示，见第 1 节说明） | 检查 `json_schema_extra` |
 | 字段名是英文 | 没传 `label` | 逐字段补 `json_schema_extra={"label": "..."}` |
 | 表单里看不到某节描述 | 节类没写 docstring | 给配置类加一句话 docstring |
 | 收不到 bot/model 配置变更回调 | 没声明 `config_reload_subscriptions` | 加 `("bot", "model")` |

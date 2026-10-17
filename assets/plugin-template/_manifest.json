@@ -19,7 +19,7 @@
   },
   "sdk": {
     "min_version": "2.6.0",
-    "max_version": "999.999.999"
+    "max_version": "2.99.99"
   },
   "capabilities": [
     "send.text"

@@ -158,12 +158,18 @@ from maibot_sdk.types import HookMode, HookOrder, ErrorPolicy
 
 ### 处理器返回值（BLOCKING）
 
-Runner 侧归一化（`runner/runner_main.py` 的 `_handle_hook_invoke`）：
+Runner 侧归一化（`runner/runner_main.py` 的 `_handle_hook_invoke`）只做类型兜底，不校验 action 取值：
 
 - `None` → `{"success": True, "action": "continue"}`
-- dict → 读 `action`（`strip().lower()` 后只认 `continue` / `abort`，其它值按 `continue` 并打 warning）、
+- dict → 读 `action`（`str(...).strip().lower()` 后原样透传，合法与否都不拦、Runner 侧不打日志）、
   `modified_kwargs`、`custom_result`
 - 其它任何类型 → `{"success": True, "action": "continue", "custom_result": raw}`
+
+action 的合法性校验集中在 Host 侧：`HookDispatcher._invoke_handler` 对 Runner 回包的 action 必过
+`_normalize_action`（`src/plugin_runtime/host/hook_dispatcher.py`）——`continue` / `abort`
+（忽略大小写与首尾空白）原样保留，空值静默回落 `continue`；
+**非法 action 会被规范化为 `continue` 并由 Host 打 warning**：`logger.warning(f"未知的 Hook action: {raw_value}，已按 continue 处理")`。
+即非法值最终确实按放行处理，但日志里一定有这条 Host 侧 warning，不能据此认为「无任何提示」。
 
 Host 侧 `HookDispatcher._merge_blocking_result` 的生效规则：
 
@@ -213,7 +219,9 @@ grep -rhoE '"[a-z_]+(\.[a-z_]+){2,}"' --include=*.py MaiBot/src/plugin_runtime/ 
 
 - **before_execute**：命令正则匹配成功、真正执行前。`abort` 会让命令**不执行**，消息按普通消息继续。
 - **after_execute**：命令执行结束后。`success` / `response` / `intercept_message_level` / `continue_process`
-  都是**可改的决策值**，Host 会按改写后的值继续（`intercept_message_level` 再经 `bool()` 判定是否拦截）。
+  都是**可改的决策值**，Host 在 `ChatBot._process_commands` 中**各自独立读回**：
+  `intercept_message_level` 经 `_coerce_int` 强制回整数、`continue_process` 单独 `bool()` 判定——
+  只改 `intercept_message_level` **不会**自动翻转 `continue_process`，要改拦截行为必须两者同步改。
   它不允许 abort，但允许改 kwargs——想改命令结果就从这里下手。
 - 权限检查发生在 Hook 之前（`command_info.permission == "operator"` 且无权限时直接拦截，不进 Hook）。
 
@@ -405,10 +413,10 @@ dict 原样返回，非 dict 包装成 `{"content": str(result)}`。
 from maibot_sdk import Command
 
 @Command(
-    "hello",                    # 位置参数：名称，不带前导斜杠！带斜杠会拼成 //hello
+    "hello",                    # 位置参数：名称，惯例不带前导斜杠（name 不参与匹配，见文末）
     description="打招呼",
-    pattern=r"^/hello\b",       # 匹配用；SDK 默认 ""，但不传无法触发
-    aliases=["/hi"],            # 可选别名（带斜杠）
+    pattern=r"^/hello\b",       # 正则匹配；SDK 默认 ""，不传且不配 aliases 则永不触发
+    aliases=["/hi"],            # 可选别名（按用户要输入的完整字面写，通常带斜杠）
     permission="operator",      # 可选，经 **metadata 透传
     **metadata: Any,
 )
@@ -469,7 +477,24 @@ async def handle_echo(self, **kwargs):
     ...
 ```
 
-⚠️ `aliases` 是字面前缀匹配，不是正则。
+### 匹配规则与 `name` 的实际用途
+
+匹配逻辑集中在 `ComponentRegistry.find_command_by_text`（`src/plugin_runtime/host/component_registry.py`），
+只看两样东西：`pattern` 编译出的正则（Host 用 `re.search`，**不是**锚定匹配——正则自身要写 `^` 才能限定句首）
+和 `aliases` 的字面前缀匹配（`text.startswith(alias)`，不是正则）。**`name` 完全不参与匹配**：
+Host 从不拿 `name` 参与拼接或构造匹配文本，name 带斜杠也不影响触发。
+
+`name` 的真实用途是把它的值**原样**用作标识符：
+
+- 权限键与停用判定：`ChatBot._process_commands`（`src/chat/message_receive/bot.py`）用
+  `f"{plugin_name}.{command_name}"` 查 `command_permissions`（`has_command_permission`，`src/core/local_operator.py`）
+  并做 `is_command_disabled` 检查——name 带斜杠就得在 `bot_config.toml` 里写带斜杠的键。
+- 会话级禁用列表：`global_announcement_manager.get_disabled_chat_commands(session_id)` 用**裸** `command_name` 判定。
+- `chat.command.before_execute` / `after_execute` 载荷里的 `command_name`。
+- WebUI 命令清单：`src/webui/routers/plugin/runtime_routes.py` 的 `list_runtime_commands` 原样展示 `name`，
+  `id` 拼成 `plugin_id.name`；后端与路由都没有给命令名加 `/` 前缀的逻辑。
+
+因此不带斜杠是**惯例而非机制**：纯粹为了让权限键、禁用列表、Hook 载荷与命令管理清单里的标识符保持一致、无斜杠。
 
 ---
 

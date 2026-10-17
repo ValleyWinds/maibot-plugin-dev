@@ -47,14 +47,20 @@ POST /api/webui/plugins/runtime/webui/{plugin}/reload
 ### schema_version 规则
 
 字段 `schema_version`，类型 `Literal[2]`，默认 2（`src/plugin_runtime/webui_schema.py`
-的 `WebUIExtension`）。**必须逐字等于整数 2**。约束有两层，给出同一条文案：
+的 `WebUIExtension`）。**实际起拦截作用的只有 before 校验器一层，`Literal[2]` 字段层不可达**——
+任何非法取值都在 before 层被拒，永远不会出现 `Input should be 2 [type=literal_error]`。
 
-1. `WebUIExtension.validate_size`（mode="before"）：`value.get("schema_version", 2) != 2` →
-   `WebUI 协议已升级为 2；请按 docs/plugin-webui.md 迁移声明`。
-   注意**缺省值也是 2**：省略 `schema_version` 会被当作 2 放行；传 1、3、字符串 `"2"` 全部触发同一文案
-   （实测：三种输入均返回该文案）。
-2. pydantic 字段层 `Literal[2]`：若 before 校验器被绕过（例如直接构造模型），得到
-   `Input should be 2 [type=literal_error]`。
+拦截逻辑在 `WebUIExtension.validate_size`（mode="before"）：`value.get("schema_version", 2) != 2` →
+`WebUI 协议已升级为 2；请按 docs/plugin-webui.md 迁移声明`。逐情形实测行为（pydantic 2.14，
+`WebUIExtension.model_validate` / 关键字构造直接复现）：
+
+- 传 `1`、`3`、字符串 `"2"`、布尔 `true`、`null`：均报上面那条迁移文案（before 层拦截）。
+- 省略该字段：`value.get(...)` 缺省回落 2，放行，模型得到整数 `2`。
+- 传浮点 `2.0`：**放行**——比较按值相等进行，数值等于 2 的任何值都通过，字段层归一存储为整数 `2`。
+- 关键字直接构造（`WebUIExtension(schema_version=1, ...)`）：pydantic v2 同样把构造参数交给
+  before 校验器，报同一条迁移文案，**不存在绕过路径**。
+- 唯一能绕过 before 校验器的是 `model_construct()`：它跳过全部校验（字段层也不运行，所以也不报错），
+  只会得到一个带非法值、未经校验的模型实例，不代表任何可观测的错误文案。
 
 ⚠️ 文案指向的 `docs/plugin-webui.md` **不存在**（全仓库只有 `docs/*/plugin/webui-pages.md`），
 作者按此文案找不到迁移说明。旧的 manifest 页面扩展协议（v2 之前）的声明一律会被拒，
@@ -140,7 +146,7 @@ POST /api/webui/plugins/runtime/webui/{plugin}/reload
 | `max_length` | `int`，默认 4000 | ge=1，le=65536 |
 | `minimum` / `maximum` | `Optional[float]`，默认 None | 不能 minimum > maximum |
 | `choices` | `List[Scalar]`，默认 `[]` | 最多 100；array/object 参数禁用 |
-| `items` | `Optional[Parameter]` | **仅 `type == "array"` 可声明** |
+| `items` | `Optional[Parameter]` | **双向绑定：`type == "array"` 必须声明、非 array 不得声明**（`validate_constraints` 判据 `(type == "array") != (items is not None)` 即报错） |
 | `properties` | `Dict[Identifier, Parameter]`，默认 `{}` | 最多 30；**仅 `type == "object"` 可声明** |
 | `max_items` | `int`，默认 1000 | ge=1，le=1000 |
 
@@ -382,7 +388,7 @@ class MyPlugin(MaiBotPlugin):
 | 插件调用超时 | RPC `timeout_ms=10000`，外层 `asyncio.wait_for(timeout=11)` | 504 `插件调用超时；操作可能仍在执行，请核实结果后再试` |
 | 进行中请求并发 | 每插件 2（`_inflight`） | 429 `该插件已有两个进行中的 WebUI 请求` |
 | 上传接收超时 | `asyncio.timeout(120)` 秒 | 408 `上传请求超时，请核实接收结果`；前端 XHR `timeout = 120000` |
-| 上传文件大小 | 20 MiB（`MAX_BYTES`），路由层 limit = 20 MiB + 64 KiB | 413 `请求超过大小限制` |
+| 上传文件大小 | 20 MiB（`MAX_BYTES`），路由层 limit = 20 MiB + 64 KiB | 两种结局并存：请求体整体越过 `WebUILimitedRoute` 的 limit → 413 `请求超过大小限制`；文件略超 20 MiB 但请求体仍在 limit 内 → 422 `文件为空或超过 20 MiB`（详见上传链路③） |
 | 上传像素 | 4000 万（`MAX_PIXELS`） | `图片超过 4000 万像素` |
 | 上传暂存配额 | 未领取 32 个总数 / 单插件 8 个 | 429 `未领取图片过多，请领取或等待暂存文件过期` |
 | 上传并发配额 | 单插件 2、全局 4 | 429 `上传处理中，请稍后再试` |
@@ -401,9 +407,12 @@ class MyPlugin(MaiBotPlugin):
 
 `_manifest.json` 的 `capabilities` 数组里声明 `webui.claim_upload`。
 宿主在 `src/plugin_runtime/capabilities/registry.py` 的 `register_capability_impls` 里注册实现
-（`cap_service.register_capability("webui.claim_upload", claim_upload)`）；授权校验走
-`src/plugin_runtime/host/capability_service.py` 的 `check_capability`，未声明时报
-`插件 {plugin_id} 未获授权能力: webui.claim_upload`（`src/plugin_runtime/host/authorization.py`）。
+（`cap_service.register_capability("webui.claim_upload", claim_upload)`）。授权校验方法
+`check_capability` **定义在 `src/plugin_runtime/host/authorization.py`**，未声明时由它返回
+`插件 {plugin_id} 未获授权能力: webui.claim_upload`；`src/plugin_runtime/host/capability_service.py`
+的 `handle_capability_request` 只是调用方——先 `self._authorization.check_capability(...)`，
+拒绝时报 `E_CAPABILITY_DENIED`；「未注册的能力: {capability}」分支则在 capability_service 本身
+（实现表查不到时）。
 manifest 的 `capabilities` 只做去重与非空校验（`src/plugin_runtime/runner/manifest_validator.py`
 的 `_validate_capabilities`），不校验取值白名单——**写错能力名不会拒载，死在运行时调用**。
 SDK 侧 `maibot_sdk/capabilities/webui.py` 的 docstring 标注需要 host >= 1.3.6。
@@ -427,7 +436,13 @@ custom 页面用 `uploads: Dict[Identifier, ImageUpload]`，被绑定的 action 
 - 前端在调用端点前先经 `parseCustomPageRequest` 校验：`name` 必须在页面 `uploads` 里、
   参数名符合 Identifier 规则、文件类型限 `image/jpeg|png|webp`；声明了 `image_max_edge`
   时先用 canvas 预处理（超限缩放 + JPEG 重编码），单文件上限 20 MiB
-- 文件读取上限 `MAX_BYTES + 1`，超出即 413
+- 大小超限有**两条路径、两种结局并存**：
+  - `WebUILimitedRoute` 对上传路由的 limit 是 `MAX_BYTES + MAX_ARGUMENT_BYTES`（Content-Length 或实际接收字节越界）
+    → **413** `请求超过大小限制`；
+  - 文件本体略超 20 MiB 但整个请求体仍在上述 limit 内时，路由层放行，`upload_webui_file` 里
+    `await file.read(MAX_BYTES + 1)` 读到截断字节后交给 `_stage_upload` → `validate_image`
+    （`upload_store.py`）抛 `ValueError("文件为空或超过 20 MiB")`，被 `except (ValueError, OSError)` 捕获
+    → **422**，详情即该文案
 
 ### ④ claim_upload（插件侧）
 
@@ -472,7 +487,7 @@ class MyPlugin(MaiBotPlugin):
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/webui/plugins/runtime/webui` | 列出全部扩展。返回 `{"success": True, "schema_version": 2, "capabilities": WEBUI_CAPABILITIES, "extensions": [...]}`，每项含 `plugin_id`、`workspace_title`、`required_capabilities`、`pages`（custom 页附 `document_revision`，`document` 被 exclude） |
+| GET | `/api/webui/plugins/runtime/webui` | 列出全部扩展。返回 `{"success": True, "schema_version": 2, "capabilities": WEBUI_CAPABILITIES, "extensions": [...]}`，每项含 `plugin_id`、`workspace_title`、`required_capabilities`、`pages`。`_serialize_extensions` 给**所有页面**都输出 `document_revision` 字段（`page.document_revision if page.mode == "custom" else None`，declarative 页固定为 `null`），`document` 被 exclude |
 | POST | `/api/webui/plugins/runtime/webui/{plugin_id}/reload` | 热重载该插件 custom 页面 HTML。插件未注册 404 `插件 WebUI 已下线`；校验失败 422 |
 | GET | `/api/webui/plugins/runtime/webui/{plugin_id}/{page_id}/document` | 取 custom 页 HTML。返回 `{"success", "document", "revision"}`，带 `Cache-Control: no-store` 与 `X-Content-Type-Options: nosniff`（只返回 JSON，避免插件 HTML 被当同源页面执行）。页面不存在 404 `自定义页面不存在` |
 | POST | `/api/webui/plugins/runtime/webui/{plugin_id}/{page_id}/{kind}/{name}` | 调用 query 或 action，`kind` 为 `queries`/`actions`。body 为 `{args, confirmed}`。成功返回 `{"success": True, "result": ...}` |

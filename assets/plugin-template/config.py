@@ -10,6 +10,14 @@
 - 所有字段放进命名节（如 [plugin]），不要留根级字段
 - [plugin].config_version 是强校验字段：缺失或为空都会让插件以「配置错误」状态注册，
   业务被暂停，仅加载配置管理
+- ⚠️ [plugin].enabled 是**宿主保留键**，禁止在配置模型里声明：
+  Host 用它做插件启停门禁（runner 的 _is_plugin_enabled / _prepare_plugin_activation，
+  值为 false 时插件直接 INACTIVE、跳过 on_load 与组件注册），WebUI 的启停开关
+  （config_routes.py 的 toggle_plugin）也写这同一个键；模型未声明时，Host 的
+  _restore_host_reserved_plugin_config 会在归一化后把磁盘上的值带回，行为完全不受影响。
+  若在模型里重复声明 enabled，配置表单里会多出一个与顶部启停开关同键的冗余开关，
+  语义混淆且关掉即停用整个插件，不是业务级"暂停"。
+  需要插件自研的总开关时，请放进自己的业务节并换个名字（如 [features].xxx_enabled）。
 """
 
 from __future__ import annotations
@@ -22,7 +30,12 @@ CONFIG_SCHEMA_VERSION = "1.0.0"
 
 
 class PluginConfig(PluginConfigBase):
-    """插件基础配置。"""
+    """插件基础配置。
+
+    只声明 config_version 一个字段。
+    [plugin].enabled 是宿主保留键（WebUI 启停开关与 runner 激活门禁共用），
+    模型无需也不应声明，详见模块 docstring。
+    """
 
     __ui_label__: ClassVar[str] = "插件设置"
     __ui_order__: ClassVar[int] = 0
@@ -35,15 +48,6 @@ class PluginConfig(PluginConfigBase):
             "hidden": True,
             "label": "配置版本",
             "order": 99,
-        },
-    )
-    enabled: bool = Field(
-        default=True,
-        description="插件总开关。",
-        json_schema_extra={
-            "hint": "打开后插件才会工作。",
-            "label": "启用插件",
-            "order": 0,
         },
     )
 

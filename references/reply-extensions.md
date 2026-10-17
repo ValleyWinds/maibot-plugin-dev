@@ -218,5 +218,7 @@ async def reply_voice(self, *, phase, parameters, text, messages, **context):
 ## 版本沿革
 
 - **2.10.0**（2026-10-07）：新增 `@ReplyExtension` 装饰器、`ReplyExtensionComponentInfo`、`ComponentType.REPLY_EXTENSION`；`collect_components` 额外输出 `chat_scope` / `allowed_session`；附 `docs/reply_extensions.md` 与参数化测试。无更名、无废弃。
+  - 出处：SDK 仓库 git tag `v2.10.0`（提交 03ece72「feat: 发布 2.10.0 并新增回复扩展接口」，改动 `maibot_sdk/components.py`、`maibot_sdk/types.py`，新增 `docs/reply_extensions.md` 与 `tests/test_reply_extensions.py`），以及 SDK 官方文档 `docs/reply_extensions.md` 声明的依赖下限 `maibot-plugin-sdk>=2.10.0`。
+  - ⚠️ 注意：**SDK 的 `CHANGELOG.md` 没有 2.10.0 条目**（版本标题从 `[2.11.0]` 直接跳到 `[2.9.0]`，属 CHANGELOG 遗漏），本条沿革并非出自 CHANGELOG，请勿因查不到而怀疑此记录。
 - **2.13.0**（2026-10-13）：`@Tool` 新增仅关键字参数 `platforms`；平台作用域随组件元数据传递，不进入模型调用参数 Schema。
 - **2.14.0**（2026-10-15）：`@ReplyExtension` 跟进 `platforms`，与 `@Tool` 共用 `_normalize_platforms`；Host 按当前聊天平台过滤 `reply.plugin_options` 中的扩展，并在准备、发送前各复查一次。

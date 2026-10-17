@@ -75,17 +75,25 @@ class MyPlugin(MaiBotPlugin):
     async def cmd_my_cmd(self, **kwargs: Any) -> tuple[bool, str, int]:
         """用户命令。必须返回三元组 (success, response, intercept_level)。
 
-        注意：Host 只消费 result[1]（response）与 result[2]（intercept），
-        result[0] 被忽略——失败语义请用 response 文本或自行发消息表达。
+        注意：
+        - result[0] 被 Host 忽略；
+        - result[1]（response 文本）也不会发给用户：Host 的
+          _handle_command_processing_result 只把它写日志并传给
+          chat.command.after_execute Hook，下游没有发送逻辑。
+          要让用户看到失败原因，只能自己在处理器里调 ctx.send 发消息；
+        - result[2] 只做布尔判定，任意非零值都会中断消息链，没有「档位」语义，
+          因此示例统一返回 1，别指望 2 比 1 更「强」；
+        - kwargs 里可用 stream_id / group_id / platform / user_id /
+          matched_groups / message / plugin_config。
         """
         stream_id = str(kwargs.get("stream_id", ""))
         try:
             # send.text 默认返回 bool；需要 message_id 时加 return_details=True
             await self.ctx.send.text(text="命令执行成功", stream_id=stream_id)
-            return True, "已发送", 2
+            return True, "已发送", 1
         except Exception as e:
             self.ctx.logger.error(f"发送失败: {e}")
-            return False, str(e), 2
+            return False, str(e), 1
 
     # ── HookHandler（命名 Hook）──────────────────────────────────────
 
@@ -96,8 +104,11 @@ class MyPlugin(MaiBotPlugin):
         该 Hook 的 kwargs 为：session_id、request_type、task_name、model_name、
         extra_prompt、attempt、retry_count、max_retries、reply_message_id、
         reply_reason、selected_expression_ids、reply_tool_args。
-        注意：extra_prompt 只在 replyer 链存在，planner 的 before_request 没有该字段；
-        modified_kwargs 是整体替换，务必把整份 kwargs 带回去。
+        注意：
+        - extra_prompt 只在 replyer 链存在，planner 的 before_request 没有该字段；
+        - modified_kwargs 是整体替换，务必把整份 kwargs 带回去；
+        - 该 Hook 声明了 allow_abort=False，返回 {"action": "abort"} 会被忽略
+          并记一条 error，这里只能返回 continue。
         """
         suffix = "\n【补充信息】..."
         kwargs["extra_prompt"] = (kwargs.get("extra_prompt") or "") + suffix

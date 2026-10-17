@@ -52,9 +52,20 @@ SDK 在 `maibot_sdk/context.py` 的 `PluginContext._normalize_capability_result`
 `message_id` 是适配器回传的 `platform_message_id`，发送失败或平台未回传时为 `None`
 （Host 侧组装见 `MaiBot/src/plugin_runtime/capabilities/core.py` 的 `_build_send_result`）。
 
-**失败传播**：Host 侧能力抛异常时返回 `{"success": False, "error": "..."}`，SDK 不抛错。
-除上述三类外的能力（`maisaka.*`、`chat.open_session`、`component.*`、`llm.*` 等）
-失败时拿到的是带 `error` 的 dict，**不要**当成空结果继续用。
+**失败传播**分两条路径，取决于 Host 能力实现是否**自行捕获**异常
+（分发点见 Host `host/capability_service.py` 的 `handle_capability_request`）：
+
+1. **能力内部捕获**：实现自带 try/except、返回 `{"success": False, "error": "..."}` dict
+   （`chat.*` / `message.*` / `component.*` / `maisaka.*` / `llm.*` 等大多数实现），Host 走
+   success=True 的正常信封，SDK 按上面三条规则把这个 dict 原样透出（解包键缺失时同样返回它）。
+   拿到带 `error` 的 dict 时**不要**当成空结果继续用。
+2. **能力未捕获 / RPC 层拒绝**：实现直接抛异常（如 Host `capabilities/data.py` 的
+   `_cap_chat_get_avatar`、`upload_store.py` 的 `claim_upload`，都没有 try/except），
+   或**能力未在 manifest 声明**（`host/authorization.py` 的 `check_capability` 判定未授权），
+   或能力未注册——这些情况 Host 返回 RPC **error 信封**，Runner `runner/runner_main.py`
+   的 `_rpc_call` 见 `resp.error` 直接 `raise RuntimeError`——插件代码拿到的是**异常**，不是 dict。
+
+因此下文 `chat.get_avatar`、`webui.claim_upload` 标注的「会抛错」就是第 2 类路径。
 
 **manifest 授权**：每个能力都要在 `_manifest.json` 的 `capabilities` 里声明能力名
 （不是代理方法名）。下文每节标题后标注需声明的名字。
@@ -113,8 +124,12 @@ if result["sent"] and result["message_id"]:
   但发到 Host 的字段名是 `emoji_base64` / `image_base64`——自己拼 `**kwargs` 时别写错
 - `send.custom(custom_type, data, ...)` 发到 Host 时同时带 `message_type` / `content` /
   `custom_type` / `data` 四份，Host 优先读 `message_type` + `content`
-- `hybrid` 的消息段用 `content` 或 `data` 都认（Host 的 `_normalize_plugin_segment` 会归一化），
-  但 `type` 只认 `text` / `image` / `emoji` / `voice`
+- `hybrid` 的消息段：`text` 用 `data` 或 `content` 都认；`image` / `emoji` / `voice`
+  的 `content` 会被 Host 归一化成 `binary_data_base64`（`_normalize_plugin_segment`），
+  `file` / `at` / `reply` / `forward` 等其余类型按 `data` 原样透传
+- `hybrid` 的 `type` 支持 9 种：`text` / `image` / `emoji` / `voice` / `file` / `at` /
+  `reply` / `forward`，以及走 `DictComponent` 兜底的自定义 `dict` 卡片
+  （还原逻辑见 `MaiBot/src/plugin_runtime/host/message_utils.py` 的 `_component_from_dict`）
 
 ---
 
@@ -178,7 +193,9 @@ SDK 只在显式传了 `task_name` / `model_name` 时才把它们放进 RPC payl
 `prompt_tokens` / `completion_tokens` / `total_tokens`。
 `embed` 单条返回 `embedding`，批量返回 `results` 列表；
 `transcribe_audio` 返回 `{"success": bool, "text": str, "content": str}`。
-这五个能力都**没有**解包键，拿到的是完整 dict，记得先看 `success`。
+这四个能力都**没有**解包键，拿到的是完整 dict，记得先看 `success`。
+`get_available_models` 是例外：解包键为 `models`，SDK 双路兼容（Host 返回 list 或
+`{"models": [...]}`）后**返回 `List[str]`**，不是 dict。
 
 ---
 
@@ -291,8 +308,9 @@ if info["status"] == "available":
 **⚠️ 易错点**：
 - 方法名是 `get_avatar`，参数是 `platform` + `target_id`（**不是** `user_id`/`group_id`）
 - `get_avatar` 失败会**抛错**，不返回旧头像；`status="unsupported"` 表示当前适配器不提供头像
-- `open_session` 的 `chat_type` 只认 `group`/`private`；`chat_type="group"` 必须给 `group_id`，
-  `private` 必须给 `user_id`，否则 Host 报错
+- `open_session` 的非法 `chat_type` **不报错**：Host `_normalize_chat_type` 对非
+  `group`/`private` 的取值带 `group_id` 就归 `group`，否则归 `private`；
+  真正报错的只有归一化后 `group` 缺 `group_id`、`private` 缺 `user_id` 两种
 - `platform` 默认值是 `"qq"`，写死别的平台要显式传参
 - 查不到流时 `get_stream_by_*` 返回 `None` 而不是抛错
 
@@ -387,8 +405,11 @@ new_count = await ctx.message.count_new(chat_id, since)
 - **没有 `get_history(stream_id, limit)`**；第一个参数一律叫 `chat_id`
 - `get_by_id` 的 `chat_id` 与 `stream_id` **等价**（Host 两个都读，任填一个即可），
   且都是仅关键字参数——`get_by_id(msg_id, chat_id)` 这种位置写法会报错
-- `get_recent` 的 Host 实现是按时间窗口（`hours`，默认 24h）取最近消息，
-  `limit` 默认 100；要更早的历史用 `get_by_time_in_chat`
+- `get_recent` 的 Host 实现是按时间窗口（`hours`，默认 24h）取最近消息。
+  注意 `limit` 有两层默认值：SDK `capabilities/message.py` 的 `get_recent` 默认 **10**
+  且经代理调用时**恒发送**该参数；Host `_cap_message_get_recent` 的
+  `args.get("limit", 100)` 中 100 只在裸调能力不传 `limit` 时生效——
+  经 `ctx.message.get_recent` 永远拿不到 100。要更早的历史用 `get_by_time_in_chat`
 - `get_by_time` 的 `start_time` / `end_time` 在 Host 侧按 `float` 解析，
   也接受 `limit` / `limit_mode` / `filter_mai` / `include_binary_data` 等 kwargs
 - `build_readable` 不传 `messages` 时 Host 可改为按 `chat_id` + 时间窗取数
@@ -411,8 +432,12 @@ nickname = await ctx.person.get_value(person_id, "name")
 person_id = await ctx.person.get_id_by_name("小明")
 ```
 
-**解包键**：`get_id` / `get_id_by_name` → `person_id`；`get_value` → `value`
-（Host 侧字段为 `None` 时回落调用方 `default`）。
+**解包键**：`get_id` / `get_id_by_name` → `person_id`；`get_value` → `value`。
+
+**⚠️ `get_value` 没有可用的 `default`**：SDK `capabilities/person.py` 的
+`get_value(person_id, field_name)` 既无 `default` 形参也不透传 `**kwargs`，
+Host `_cap_person_get_value` 里的 `args.get("default")` 永远是 `None`——
+字段缺失拿到的就是 `None`，SDK 不提供 default 形参，回落值要调用方自己写。
 
 **⚠️ 没有 `person.get(user_id=...)`**；取内部人物 ID 用 `get_id(platform, user_id)`，
 两个都是位置参数。
@@ -525,8 +550,9 @@ await ctx.component.reload_plugin("com.example.other")
 - `unload_plugin` — **恒返回失败**："新运行时不支持单独卸载插件，请使用 reload"；
   要重载统一走 `reload_plugin`
 - `enable_component` / `disable_component` — Host 仅支持 `scope="global"` 且不传
-  `stream_id`，传了会话级参数返回「当前仅支持全局组件启用/禁用」；
-  组件名不唯一时要求用完整名 `plugin_id.component_name`
+  `stream_id`，传了会话级参数时 `enable_component` 返回「当前仅支持全局组件启用，不支持
+  scope/stream_id 定位」，`disable_component` 返回「当前仅支持全局组件禁用，不支持
+  scope/stream_id 定位」；组件名不唯一时要求用完整名 `plugin_id.component_name`
 - `component_type` 经 SDK 的 `normalize_component_type_name` 归一化为大写，
   接受 `command` / `COMMAND` 等写法，但 `workflow_step` 直接抛 ValueError
   （`WorkflowStep` 已移除，改用 `HookHandler`）
@@ -589,13 +615,18 @@ await ctx.gateway.update_state("my_gateway", ready=True, platform="telegram", ac
 await ctx.gateway.route_message("my_gateway", message, external_message_id="42", dedupe_key="42")
 ```
 
-**返回值**：四个方法都返回 `bool`，取自 Host 响应的 `accepted` 字段
-（非 dict 响应一律 `False`）。
+**返回值**：四个方法声明返回 `bool`，取自 Host **正常响应**的 `accepted` 字段
+（非 dict 响应一律 `False`）。但失败形态有两种：只有 Host 正常回
+`accepted=False`（入站策略拒绝）时插件才拿到 `False`；若网关**未声明**、
+**不支持 receive** 或状态**未就绪**，Host `host/supervisor.py` 的
+`_handle_route_message` / `_handle_update_message_gateway_state` 返回
+`E_METHOD_NOT_ALLOWED` 的 error 信封——插件侧 SDK `capabilities/gateway.py`
+不做捕获，拿到的是 `RuntimeError`，**不是** `False`。
 
 **⚠️ Host 侧限制**：
 - `route_message` 要求该 `gateway_name` 已在 Host 注册、`route_type` 支持 receive
   （`send`/`receive`/`duplex` 及别名 `recv`/`recive`），且运行时状态 `ready=True`，
-  否则返回 `E_METHOD_NOT_ALLOWED`
+  否则 Host 回 `E_METHOD_NOT_ALLOWED` error 信封，插件侧抛 `RuntimeError`
 - 仅声明 `@MessageGateway` 组件不够，必须调 `update_state(..., ready=True)` 才参与收发
 - **没有 `gateway.get_status()`**
 
@@ -704,9 +735,15 @@ dist = await ctx.statistics.local.token_distribution(group_by="module")
 - `limit` / `top_*` / `top_items` 必须为正整数，上限 50
 - `bucket` 只支持 `hour` / `day`（大小写不敏感，也认 `1h` / `按小时` 等别名）
 - `group_by` 只支持 `model` / `module` / `provider` / `type`
-- `metric` 只支持 `token` / `request` / `cost` / `latency`
-- 违法参数会抛 `ValueError` 并被 Host 捕获为 `{"success": False, "error": ...}`，
-  SDK 侧 `models` 回落 `[]`、其余回落 `{}`
+- `metric` 认 `token` / `request` / `cost` / `latency`，但**非法值不报错**：
+  Host `_statistics_model_metric_sql` 各分支都不匹配时静默按 `token` 兜底
+- 会抛 `ValueError` 并被 Host 捕获为 `{"success": False, "error": ...}` 的只有
+  `days` / `limit` / `top_*` / `bucket` / `group_by`
+  （见 Host `_normalize_statistics_days` / `_normalize_statistics_limit` /
+  `_normalize_statistics_bucket` / `_statistics_token_group_column`）
+- SDK 侧 `models` 对错误 dict 回落 `[]`；六个趋势/分布方法会把
+  `{"success": False, "error": ...}` **原样透出**（它本身就是 dict，满足
+  `isinstance(result, dict)` 判断），回落 `{}` 只发生在 result 非 dict 时
 
 **⚠️ 易错点**：调用路径是 `ctx.statistics.local.models(...)`，
 **不是** `ctx.statistics.models(...)`；manifest 能力名带 `statistics.local.` 前缀。
@@ -751,7 +788,8 @@ runtime_path = ctx.paths.runtime_dir / "latest.png"  # temp/plugins/<plugin_id>/
 - 拼路径直接用 `/` 或 `str()`
 - 持久数据 → `data_dir`；可重建的缓存/中间产物 → `runtime_dir`（不承诺长期保留）
 - 不要再自建 `plugins/<plugin>/data`；不要把用户输入直接当文件名
-- 未注入 paths 时 SDK 兜底为 `Path("data")/plugin_id` 与 `Path("temp")/plugin_id`
+- 未注入 paths 时 SDK 兜底为 `Path("data") / "plugins" / plugin_id` 与
+  `Path("temp") / "plugins" / plugin_id`（见 `maibot_sdk/context.py` 的 `PluginContext.__init__`）
 
 ### ctx.logger
 
