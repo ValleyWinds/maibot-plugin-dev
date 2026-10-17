@@ -500,21 +500,24 @@ await ctx.llm.generate(prompt="...", model="replyer")
 
 ---
 
-### 陷阱 16：版本区间锁死小版本 / Release 版本对不上被插件中心拒收
+### 陷阱 16：版本区间上界过时 / Release 版本对不上被插件中心拒收
 
 **现象 A**：MaiBot 升级后插件突然加载不了，日志报 `Host 版本不兼容`。
 
-**根因**：`host_application.max_version` 写成了低于当前 Host 的版本（如 `1.2.99`），Host 升到 1.3.x 直接超出区间。
+**根因**：`host_application.max_version` 落后于当前 Host 所在的次版本线（如还写着 `1.2.99`，Host 已升到 1.3.x）。
 版本区间校验规则（`manifest_validator.py` `_validate_runtime_compatibility`）：
 - Host **高于** `max_version` 但**主次版本相同**（仅补丁号超出）→ warning，插件照常加载（`is_same_major_minor_higher_version`）
 - Host 其余情况超出区间（如 1.2.x 插件遇 1.3.x）→ error，插件被阻止加载
 - SDK 超出区间 → **一律 error**，无容忍档
 
-**正确做法（两条线两套口径，别混用）**：
-- **`host_application`**：`max_version` 写 `999.999.999`，只认真约束 `min_version`。依据：Host 有同主次版本的补丁级容忍规则，超界多为 warning（见上），别把"新版本还能不能跑"交给版本号，交给实际测试。
+**正确做法（两条线各锁各的线，别混用）**：
+- **`host_application`**：`max_version` 锁在**当前已实测通过的次版本线**（如 `1.3.99`），`min_version` 按真实依赖写。
+  锁次版本线是安全的：Host 的同主次补丁级容忍规则（见上）保证 1.3.x 内的任意补丁升级**只 warning 不拦截**，
+  所以 `1.3.99` 不会被日常升级挡住；而当 MaiBot 进入新小线（1.4/2.x）时插件会被挡下来——这正是设计意图：
+  **"新版本能不能跑"用实际测试来回答，通过测试后抬界、发新版，而不是让版本号静默声明未验证的兼容**。
 - **`sdk`**：`max_version` 锁在当前主版本线内（如 `2.99.99`），**不要**写 `999.999.999`。依据：SDK 超出区间**一律 error、没有容忍档**（`_validate_runtime_compatibility` 对 SDK 没有任何豁免分支），而插件确实依赖 SDK 的接口形状——把上界放开等于声明支持根本不兼容的大版本，插件会被放进必炸的环境。
 
-两处官方来源**各自实际写的值不同**，不要笼统说"官方就是这么写的"：内置插件
+两处官方来源**各自实际写的值不同**（本技能采纳后者的锁线思路，见上），不要笼统说"官方就是这么写的"：内置插件
 `src/plugins/built_in/plugin_management/_manifest.json` 写 `host_application: 1.0.0 ~ 999.999.999`、
 `sdk: 2.0.0 ~ 2.99.99`；上游 `MaiM-with-u/plugin-repo` 的 `CONTRIBUTING.md` 示例写
 `host_application: 1.0.0 ~ 1.99.99`、`sdk: 2.0.0 ~ 2.99.99`。两条线的 `min_version` 都是真实下限，都不是 `0.0.0`。

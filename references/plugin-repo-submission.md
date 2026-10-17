@@ -112,17 +112,18 @@ description: MaiBot 插件发布与收录参考：plugin-repo 收录流程、Rel
 `host_application` 与 `sdk` 各为一个版本区间对象，`min_version` / `max_version` 均必填、都必须是严格三段式，
 且 `min_version` 不能大于 `max_version`（`manifest_validator.py` 的 `ManifestVersionRange` 校验）。
 
-- **两条线要分开写**：
-  - `host_application.max_version` 写 `999.999.999`，只认真约束 `min_version`；不想约束下界就写 `0.0.0`。
-    Host 侧有「同主次版本更高版本仅 warning」的容忍规则（见 §3.2），写高上界不会造成误放行后的静默故障。
+- **两条线各锁各的线**：
+  - `host_application.max_version` 锁在**当前已实测通过的次版本线**（如 `1.3.99`），`min_version` 按真实依赖写。
+    Host 侧有「同主次版本更高版本仅 warning」的容忍规则（见 §3.2），锁 `1.3.99` 不会被 1.3.x 内的补丁升级误挡；
+    MaiBot 进入新小线（1.4/2.x）时插件被挡是**有意的刹车**——实测新 Host 兼容后抬界、发新 Release。
   - `sdk` 区间锁在 2.x 线：`min_version` 按实际依赖的 SDK 写、**上界按 `2.99.99`**。
     官方内置插件 `src/plugins/built_in/plugin_management/_manifest.json` 实测即 `sdk.min_version: 2.0.0` /
     `sdk.max_version: 2.99.99`（上游 `CONTRIBUTING.md` 示例同为 `2.99.99`），其 `host_application.min_version`
     是 `1.0.0` 而非 `0.0.0`。原因：SDK 超区间**一律 error 拒载、没有容忍档**（见 §3.2），
-    SDK 与 Host 独立发版、大版本换代意味着破坏性变更，上界必须锁在当前主版本线内；
-    Host 有同主次版本容忍规则，因此上界可以放心写 `999.999.999`，SDK 不行。
-- **为什么不要锁死小版本**：上界写成具体小版本（如 `1.1.99`）时，MaiBot 一升级（如到 `1.3.9`）插件就被版本校验挡住，
-  用户看到的是「插件突然加载不了」。把「新版本还能不能跑」交给实际测试，不要交给版本号。
+    SDK 与 Host 独立发版、大版本换代意味着破坏性变更，上界必须锁在当前主版本线内。
+- **上界维护义务**：锁次版本线意味着每次 MaiBot 出新小线都要**主动过一遍兼容性并抬界**，
+  忘记抬界的代价是用户升级 Host 后插件被挡（日志 `Host 版本不兼容`）；这比放任上界静默声明未验证的兼容，
+  是更负责任的默认。发布新 Host 兼容版时记得 Tag 与 manifest `version` 一致。
 - `sdk.min_version` 要覆盖**目标环境实际运行的 SDK 版本**——SDK 与主程序独立发版，SDK 侧新能力可能领先 Host 实现，
   写新调用前先确认 Host 注册表里有该能力名（搜 `src/plugin_runtime/capabilities/registry.py`）。
 
@@ -231,7 +232,7 @@ Host 侧基类是 `extra="forbid"`，任何未声明字段都会让校验失败�
 - [ ] 公开 GitHub 仓库，根目录有 `_manifest.json`（`manifest_version: 2`）、`plugin.py`、`LICENSE`（类型与 `license` 一致）、`README.md`
 - [ ] 至少一个已发布 Release（非草稿、非仅 Tag；预发布可），且其 Tag 与 manifest `version` 一致
 - [ ] `id` 稳定唯一（形如 `github.username.my-plugin`），无空格、无路径字符；后续不再改
-- [ ] 所有版本号三段式；`host_application` / `sdk` 上界未锁死小版本
+- [ ] 所有版本号三段式；`host_application.max_version` 锁在你实测过的次版本线（如 `1.3.99`）、`sdk.max_version` 锁在 2.x 线（如 `2.99.99`），且区间覆盖你期望的发布环境（见 §3.1）
 - [ ] `author` 是 `{ name, url }`；`urls.repository` 是公开 HTTPS 地址、无 `.git` 后缀
 - [ ] `capabilities` 只声明实际需要的能力，无能力时写空数组
 - [ ] 未在真实 MaiBot 里验证过加载运行前，不要提 Issue（AI 审核次数有限）

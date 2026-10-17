@@ -77,8 +77,8 @@ my-plugin/
 - `display.icon`（lucide / emoji / local）、`changelog`（URL 或插件目录内 `.md` 相对路径）。
 - ⚠️ 基类是 `extra="forbid"`：任何未声明字段（`extensions`、`categories`、`keywords`、`repository_url` 等）都会让校验失败报「存在未声明字段」。
 
-版本区间最佳实践（详见 `references/common-pitfalls.md` 的陷阱 16）——**两个区间要分开表述，不是一条 `999.999.999` 通吃**：
-- `host_application`：上界写 `999.999.999`，只认真约束 `min_version`——锁死小版本会导致 MaiBot 一升级插件就被挡。
+版本区间最佳实践（详见 `references/common-pitfalls.md` 的陷阱 16）——**两个区间各锁各的线，不是一条上界通吃**：
+- `host_application`：上界**锁在当前已实测的次版本线**（如 `1.3.99`），`min_version` 按真实依赖写。Host 对超界但有相同主次版本的只给 warning 照常加载（`is_same_major_minor_higher_version`），所以 `1.3.99` 不会被 1.3.x 的补丁升级挡住；MaiBot 进入新小线（1.4/2.x）时插件会被挡——这是设计意图：**实测过再抬界发新版**，不静默声明未验证的兼容。
 - `sdk`：上界锁在当前主版本线内（如 `2.99.99`，内置插件 plugin_management 的 `_manifest.json` 即此写法），**不要写 `999.999.999`**。
 - 容忍规则只给 Host：`manifest_validator.py` 的 `_validate_runtime_compatibility` 中，Host 超上界但主次版本相同（`VersionComparator.is_same_major_minor_higher_version`）→ warning 照常加载；其余 Host 超范围 → 拒载。**SDK 超范围没有任何容忍分支，一律直接拒载**——这正是 sdk 上界不能拉满的原因。
 - 排查用临时手段：`[debug] force_plugin_compatibility` 开关跳过版本校验（需重启，其他校验照旧）。
@@ -196,7 +196,7 @@ class MyPlugin(MaiBotPlugin):
 
 11. **proactive.trigger 调用方式**：`await ctx.maisaka.proactive.trigger(stream_id, intent, reason="")` 或快捷方法 `ctx.maisaka.trigger_proactive(...)`。
 12. **config.get 读取主程序配置**：`await ctx.config.get("personality.personality", "")`，异步，key 支持点分割路径。
-13. **manifest 版本上界分两条线；Release Tag = manifest version**：`host_application` 上界写 `999.999.999`、`sdk` 上界锁在当前主版本线内（如 `2.99.99`）——SDK 超范围无容忍分支、一律拒载；Host 侧锁死小版本上界会被版本校验挡住；Tag 与 version 不一致 / id 变动 → Release 被插件中心拒收。
+13. **manifest 版本上界分两条线；Release Tag = manifest version**：`host_application` 上界锁在当前已实测的次版本线（如 `1.3.99`，Host 同主次版本更高补丁仅 warning、不会误挡 1.3.x 升级；MaiBot 出新小线后实测抬界再发版）、`sdk` 上界锁在当前主版本线内（如 `2.99.99`）——SDK 超范围无容忍分支、一律拒载；Tag 与 version 不一致 / id 变动 → Release 被插件中心拒收。
 14. **SDK 新能力可能领先 Host 实现**：`chat.get_avatar` 现已由 Host 实现（1.3.9 注册表在册），但机理仍成立——SDK 与 Host 独立发版，能力名不在注册表时调用才失败；怀疑时 grep 主程序 `src/plugin_runtime/` 确认。
 15. **Host 侧硬限制**：`component.update_plugin_config` 仅内置插件管理可用、`component.unload_plugin` 恒失败（改用 reload）、`component.enable/disable` 仅支持全局 scope、`database.query` 只支持 5 种 query_type、`api.call` 禁跨插件调未公开 API、未注册的 Hook 名会让组件注册直接失败。
 
