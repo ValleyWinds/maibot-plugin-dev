@@ -1,2 +1,17 @@
 __pycache__/
 *.pyc
+
+# 本机技能导入元数据（ZCode 生成，不应发布）
+_user_meta.json
+
+# Python / 编辑器 / 系统杂物
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
