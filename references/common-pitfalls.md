@@ -37,7 +37,7 @@ async def handle_hello(self, **kwargs):
     return True, "已发送", 2  # ✅ 三元组，intercept=2 拦截 AI
 ```
 
-> **Command 的 `name` 不带前导斜杠**（`@Command("hello", pattern=r"^/hello")`，SDK `components.py` `Command` 装饰器 docstring 即此写法），`pattern` 和 `aliases` 才带 `/`。`name="/hello"` 会被 WebUI 命令管理页再加一次 `/` 前缀，显示成 `//hello`。`name` 还会拼进权限路径 `plugin_id.command_name`（`bot.py` 的 `has_command_permission(f"{plugin_name}.{command_name}", ...)`），带斜杠会得到 `plugin_id./hello`。
+> **Command 的 `name` 不带前导斜杠**（`@Command("hello", pattern=r"^/hello")`，SDK `components.py` `Command` 装饰器 docstring 即此写法），`pattern` 和 `aliases` 才带 `/`。两处真实代价（均已实测）：① `name="/hello"` 会被「配置 → 命令权限」页**再加一次** `/` 前缀显示成 `//hello`——前端 `dashboard/src/routes/config/bot/CommandPermissions.tsx` 用 `/{command.name}` 渲染，斜杠是 JSX 裸文本，grep `'/'` 字符串字面量搜不到；② `name` 会拼进权限路径 `plugin_id.command_name`（`bot.py` 的 `has_command_permission(f"{plugin_name}.{command_name}", ...)`），带斜杠得到 `plugin_id./hello` 这种带 `./` 的键，命令注册表里的 `id` 同样如此（实测 `probe.slash-name./probe_slash`）。注意 Host 的**匹配**只看 `pattern`/`aliases`，带斜杠照样能触发——坏的是标识符与界面呈现，不是触发。
 
 **验证来源**：SDK `maibot_sdk/components.py` `Command`；主程序 `src/plugin_runtime/component_query.py` `_build_command_executor`；`src/chat/message_receive/bot.py` `_process_commands`
 

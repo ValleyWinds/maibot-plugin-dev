@@ -385,6 +385,7 @@ WebUI Schema 里 `sections` 含两个键 `plugin` 与 `infos_section`（顺序�
 | 升级版本号后配置被重写了一次 | 版本号段数不一致（磁盘 `1.0`、默认 `1.0.0`）：判为升级触发**一次性**重建并落盘（重建后两边一致，不会每次重启都重写） | 统一三段式、段数一致 |
 | 改了默认版本号/结构但用户配置迟迟不迁移 | 反方向段数不一致（默认 `1.0`、磁盘 `1.0.0`）：`compare_versions` 判「无更新」→ **永不重建**，静默失效 | 默认版本号改成段数不少于磁盘侧的三段式并上调 |
 | 表单里某些字段不显示 | `hidden: True`（字段在模型根级不是原因：Host 1.3.9 会把根级字段折进 `general` 节正常显示，见第 1 节说明） | 检查 `json_schema_extra` |
+| **整个配置页显示「未找到配置项」** | 两种原因长得一样：① 插件尚未被运行时注册，Schema 取不到；② 该节字段**全部** `hidden: True`（例如 `[plugin]` 节只有 `config_version`），被前端过滤后就是空白页 | 先用 `GET /api/webui/plugins/installed` 确认 `load_status`；确实已加载而仍空白，就是隐藏字段导致的正常现象，别误判成加载失败 |
 | 字段名是英文 | 没传 `label` | 逐字段补 `json_schema_extra={"label": "..."}` |
 | 表单里看不到某节描述 | 节类没写 docstring | 给配置类加一句话 docstring |
 | 收不到 bot/model 配置变更回调 | 没声明 `config_reload_subscriptions` | 加 `("bot", "model")` |

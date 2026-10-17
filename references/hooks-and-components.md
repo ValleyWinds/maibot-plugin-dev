@@ -491,10 +491,16 @@ Host 从不拿 `name` 参与拼接或构造匹配文本，name 带斜杠也不�
   并做 `is_command_disabled` 检查——name 带斜杠就得在 `bot_config.toml` 里写带斜杠的键。
 - 会话级禁用列表：`global_announcement_manager.get_disabled_chat_commands(session_id)` 用**裸** `command_name` 判定。
 - `chat.command.before_execute` / `after_execute` 载荷里的 `command_name`。
-- WebUI 命令清单：`src/webui/routers/plugin/runtime_routes.py` 的 `list_runtime_commands` 原样展示 `name`，
-  `id` 拼成 `plugin_id.name`；后端与路由都没有给命令名加 `/` 前缀的逻辑。
+- WebUI 命令清单：`src/webui/routers/plugin/runtime_routes.py` 的 `list_runtime_commands` 返回**原样** `name`，
+  但 `id` 拼成 `plugin_id.name`——实测 `name="/probe_slash"` 会得到 `probe.slash-name./probe_slash`（中间是 `./`）。
+  **前端「配置 → 命令权限」页会在渲染时再加一个 `/`**：`dashboard/src/routes/config/bot/CommandPermissions.tsx`
+  用 `/{command.name}`（列表项）与 `/{selectedCommand.name}`（详情标题）渲染，斜杠是 JSX 裸文本而非字符串常量，
+  所以只 grep `'/'` 字面量会漏掉。结果就是 `name="probe_plain"` 显示 `/probe_plain`（这正是规范假定前端补斜杠的由来），
+  而 `name="/probe_slash"` 显示成 **`//probe_slash`**。
 
-因此不带斜杠是**惯例而非机制**：纯粹为了让权限键、禁用列表、Hook 载荷与命令管理清单里的标识符保持一致、无斜杠。
+所以「不带前导斜杠」有**两条真实代价**，不是纯惯例：① 权限键 / 禁用列表 / Hook 载荷里的标识符变成
+`plugin_id./name` 这种带 `./` 的怪串；② WebUI 命令权限页显示成 `//name`。Host 侧匹配本身不看 `name`，
+带斜杠照样能触发——坏的是标识符与界面呈现，不是触发。
 
 ---
 

@@ -206,7 +206,7 @@ spec.loader.exec_module(mod)
 plugin = mod.create_plugin()  # 直接实例化、直接断言
 ```
 
-⚠️ `build_plugin_default_config` 不在包根导出，从 `maibot_sdk.config` 导入（`from maibot_sdk import build_plugin_default_config` 会 ImportError）。
+⚠️ `build_plugin_default_config` 与 `collect_components` 都不在包根导出，要分别从 `maibot_sdk.config` / `maibot_sdk.components` 导入（`from maibot_sdk import build_plugin_default_config` 会 ImportError）。另外 `collect_components(plugin)` **返回的是已经 `model_dump()` 过的 dict 列表**，直接 `.model_dump()` 会抛 `AttributeError: 'dict' object has no attribute 'model_dump'`。
 
 SDK 2.14.0 运行时真正需要的第三方依赖只有 `pydantic`（`maibot_sdk/config.py` / `types.py` / `messages.py` 等直接 import），PIL 视插件而定。`msgpack` 只是 `pyproject.toml` 的声明项，SDK 源码里没有任何一处 import 它，本地缺了也能跑通——真正使用 msgpack 的是 Host 侧 `src/plugin_runtime/protocol/codec.py` 的插件进程间 RPC 编解码，与这条独立导入验证路线无关（SDK 自带的 `docs/guide.md` 重复了「运行时依赖 pydantic + msgpack」的过时说法，勿被带偏）。用 uv 临时环境补齐即可，不污染系统 Python：
 
@@ -277,6 +277,9 @@ WebUI 的鉴权走 **Cookie `maibot_session`**，缺它一律 `401 未授权：�
   「🔑 WebUI 登录 Token」一行）。日志别外传；要换就 `POST /api/webui/auth/regenerate`。
 - 插件目录下的 `config.toml` 被 gitignore，`toggle` 来回翻转不会把仓库弄脏；但仍建议**在 `finally`
   里把状态恢复原样**，并跑一次 `git status --short` 确认。
+- **新放进 `plugins/` 的目录会被自动加载，不用重启 MaiBot**：`watchfiles` 检测到新目录后直接拉起新
+  Runner（日志形如 `已启动：pid=…，已加载=1（<plugin_id>）`），约 1-2 秒内 `GET /installed` 就能看到
+  `load_status: success`。已加载的插件改代码则靠同一路径的源码监听热重载。
 
 ### 最容易白验的一点
 
