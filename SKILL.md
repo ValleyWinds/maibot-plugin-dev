@@ -157,7 +157,7 @@ class MyConfig(PluginConfigBase):
 - `json_schema_extra` 传 UI 元数据：`label` / `hint` / `order` / `placeholder` / `group` / `disabled` / `hidden` / `i18n`
 - 配置节多语言：`__ui_i18n__ = {"en_US": {"title": "Settings"}}`（结构是 `{locale: {key: text}}`）
 - 支持 `list[Literal["a","b"]]` 生成多选配置
-- **`[plugin]` 节必须含 `config_version`**，缺失时插件只加载配置管理、业务被暂停（见 `references/common-pitfalls.md` 的陷阱 12）
+- **`[plugin]` 节必须含 `config_version`**，缺失时插件只加载配置管理、业务被暂停（见 `references/common-pitfalls.md` 的陷阱 12）。⚠️ 该校验**只对声明了 `config_model` 的插件生效**：`runner_main.py` 的 `_prepare_plugin_config_for_version_update` 在 `default_config` 为空（无配置模型）时直接跳过版本校验——无 `config_model` 的纯 Hook 插件缺版本号照样正常加载（运行实例实测：有模型缺版本 → warning「插件 {id} 配置错误，仅加载配置管理」且 on_load 不执行；无模型缺版本 → 正常加载）
 
 ### 5. 配置热重载订阅
 
@@ -181,7 +181,7 @@ class MyPlugin(MaiBotPlugin):
 1. **Command 必须返回三元组** `(success, response, intercept_message_level)`：`intercept` 非 0 才拦截消息（任意 truthy 都算），**`result[0]` 被 Host 彻底忽略**；返回单字符串/2 元组会掉进 else 分支且 intercept 恒为 0。Command 必须自己调 `ctx.send.text()` 发送回复。
 2. **llm.generate 的 system_prompt 被 Host 忽略**：SDK 签名里没有该参数，会被 `**kwargs` 吞掉；system prompt 走消息列表 `[{"role":"system",...}]`，指定任务/模型用 `task_name=` / `model_name=`。
 3. **send.* 返回 bool**（不是 dict）：7 个 `send.*` 方法全在 `_BOOLEAN_SUCCESS_CAPABILITIES` 中；需要平台消息 ID 时传 `return_details=True` 得 `{"success","sent","message_id"}`。
-4. **Hook kwargs 是嵌套结构**：`chat.receive.before_process` 的 kwargs 只有 `message`（SessionMessage 序列化字典），user_id 嵌套在 `message_info.user_info.user_id`，不要从顶层取。
+4. **Hook kwargs 是嵌套结构**：`chat.receive.before_process` 的 kwargs 只有 `message`（SessionMessage 序列化字典）和 `hook_name`（Host 统一注入），user_id 嵌套在 `message_info.user_info.user_id`，不要从顶层取。⚠️ **`hook_name` 出现在每一个命名 Hook 的 kwargs 里**（`hook_dispatcher.py` 组装 `{"hook_name": ..., **kwargs}`，运行实例实测 chat/send/replyer 三条链皆有），references 里的 kwargs 清单按 HookSpec 声明列键、不逐一标注它。
 5. **`maisaka.planner.*` 两个 Hook 只认 `items` / `output_items`**：写 `messages` / `response` 不报错但被忽略，插件「能加载但功能静默失效」；回带时 `item_schema_version` 必须原样不动。
 
 ### P1 — 严重陷阱

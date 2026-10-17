@@ -109,8 +109,17 @@ Host 侧 `ToolEntry` / `ReplyExtensionEntry` 各自解析 `platforms`，在 `che
 | `maisaka.reply.before_post_process` | maisaka/chat_loop_service.py | maisaka/builtin_tool/reply.py `_invoke_before_post_process_hook` | 回复**工具**内部调用，晚于 replyer 出稿 |
 
 ⚠️ Host 的 `HookDispatcher.invoke_hook` 只透传 kwargs，**不按 schema 过滤**。因此实际可读到的键可能多于上表。
-已知一例：`expression.select.before_select` 的调用处除 schema 字段外还传入了 `session_id`、`chat_history`、
-`reply_message`、`reply_tool_args`、`candidates`。**依赖这些未声明键等于依赖实现细节**，换版本可能静默失效。
+两件事要分开：
+
+- **`hook_name` 是稳定契约，上表每行都会额外带上它**：`hook_dispatcher.py` 向 Runner 派发前组装
+  `request_args = {"hook_name": hook_name, **dict(kwargs)}`，所以**每个命名 Hook 的处理器 kwargs
+  都比表里多一个 `hook_name`**（值就是被触发的 Hook 名）。运行实例实测确认 chat 链、send_service 链、
+  maisaka.replyer 链皆如此。表格里不逐行标注它。
+- 调用处**附带传入**的其它 schema 外键才是实现细节——已知一例：`expression.select.before_select`
+  的调用处还传入了 `session_id`、`chat_history`、`reply_message`、`reply_tool_args`、`candidates`。
+  **依赖这些未声明键等于依赖实现细节**，换版本可能静默失效。
+
+另外，改写 kwargs 时**别把 `hook_name` 从 `modified_kwargs` 里删掉**（整体替换语义，建议原样带回整份 kwargs）。
 
 ---
 
@@ -211,7 +220,7 @@ grep -rhoE '"[a-z_]+(\.[a-z_]+){2,}"' --include=*.py MaiBot/src/plugin_runtime/ 
 - **before_process**：入站消息执行 `SessionMessage.process()` 之前；`message` 是序列化后的 `SessionMessage` dict，
   `user_id` 嵌套在 `message_info.user_info.user_id`。`abort` = 这条消息不再进入后续链路。
 - **after_process**：`process()` 完成后（此时才有识别出的图片/表情文本描述）。
-- 两个 Hook 都只收 `message` 一个键；改写消息回带 `modified_kwargs={"message": {...}}`，Host 会尝试反序列化，
+- 两个 Hook 都只收 `message` 一个 schema 键（外加 Host 统一注入的 `hook_name`，见上文说明）；改写消息回带 `modified_kwargs={"message": {...}}`，Host 会尝试反序列化，
   失败则 warning 并沿用原消息。
 - 图片自动注释、入站改写类插件挂这里；注意 `timeoutMs=0`，实际超时走全局默认 60 秒，别在 Hook 里跑重推理。
 
@@ -666,6 +675,10 @@ async def home_card_marker(self) -> None:
 - `link_url` 只允许 WebUI 内部路径、`http(s)`、`mailto`。
 - 安全边界：**WebUI 不执行插件提供的 HTML/JS**，Markdown 里的 HTML 也按纯文本处理。
 - 卡片随插件加载注册，插件禁用 / 卸载 / 重载后自动从首页候选移除。
+- ⚠️ **装饰器参数在类定义期求值，引用 `self` 直接 `NameError`**：`@HomeCard(..., content=[..., str(len(self._report))])`
+  这种"动态生成卡片内容"的写法会让整个插件在 import 阶段炸掉（运行实例实测报错文案
+  `插件注册失败: {id}: name 'self' is not defined`，且看不到出错行号）。卡片内容必须是装饰时刻就能算出的
+  静态数据；要展示动态数据请改用 webui.json 页面绑定本插件 `@API`。同样的规则适用于所有组件装饰器的参数。
 
 ### 声明式页面（webui.json）— 与 HomeCard 并行的另一套机制
 

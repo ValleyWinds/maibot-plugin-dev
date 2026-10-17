@@ -9,7 +9,9 @@
 - 所有字段必须有默认值，否则 build_plugin_default_config 构造默认配置会失败
 - 所有字段放进命名节（如 [plugin]），不要留根级字段
 - [plugin].config_version 是强校验字段：缺失或为空都会让插件以「配置错误」状态注册，
-  业务被暂停，仅加载配置管理
+  业务被暂停，仅加载配置管理（WebUI 列表仍显示 load_status=success，只有日志 warning 可见）。
+  注意：该校验只对**声明了 config_model** 的插件生效——删掉本文件、纯 Hook/Command 插件缺版本号
+  不会报错（runner_main.py 的 _prepare_plugin_config_for_version_update 对空 default_config 直接跳过）
 - ⚠️ [plugin].enabled 是**宿主保留键**，禁止在配置模型里声明：
   Host 用它做插件启停门禁（runner 的 _is_plugin_enabled / _prepare_plugin_activation，
   值为 false 时插件直接 INACTIVE、跳过 on_load 与组件注册），WebUI 的启停开关

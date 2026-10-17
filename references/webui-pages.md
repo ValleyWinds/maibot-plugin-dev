@@ -185,8 +185,15 @@ POST /api/webui/plugins/runtime/webui/{plugin}/reload
 - 进页后**顺序**执行所有 `queries`（遵守网关并发上限），整份快照成功后才替换页面数据
 - 表单值来自 `content` 里的 input/date/select/switch 初始值；可用 `navigate(pageId, state)`
   把已声明的标量输入写进 URL `?state=`（`readPluginPageState`，上限 4 KiB）
-- `arguments` 绑定行选择/查询数据：前端按 `DataReference` 取值，值缺失且参数 required 时抛
-  `Missing action argument: {name}`；非标量抛 `Action argument must be scalar: {name}`
+- **action 参数的两条来源通道**（运行实例实测，2026-10-17）：
+  ① **表单同名自动绑定**——`parameters` 里声明的参数名若与 `content` 中交互控件（input/switch/select/date）
+  的 `name` 相同，前端执行 action 时自动把该控件的**当前值**填入 args，**不需要**任何 `arguments` 声明；
+  用户没碰过的控件按初始值填入（如 switch value:false 原样发送）。这正是上文最小示例里
+  `input name="limit"` + `save_limit` 参数 `limit` 能工作的机制。
+  ② `arguments` 的 `DataReference` 绑定——把 **query 结果字段或行选择**注入参数（`{source:"summary",
+  field:"count"}` / `{scope:"selection", source:"rows", ...}`），用于"用选中行的数据触发操作"场景。
+  值缺失且参数 required 时抛 `Missing action argument: {name}`；非标量抛 `Action argument must be scalar: {name}`。
+  两条通道互不冲突；`arguments` 显式声明的参数走 DataReference，其余参数走同名表单。
 - 执行 action 时若 `busy` 则忽略；`confirmation` 非空时先弹确认，确认期间冻结当次参数
 - `poll_interval_seconds >= 3` 时按秒轮询，`busy` 时跳过本轮
 

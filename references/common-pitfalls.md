@@ -120,6 +120,11 @@ if result["sent"] and result["message_id"]:
 `message_info.user_info.user_id` 里。命令链的 `chat.command.before_execute` 才会在顶层多带
 `command_name` / `plugin_id` / `matched_groups`。
 
+⚠️ 运行实例实测：处理器实际收到的 kwargs 是 `['hook_name', 'message']`——`hook_name` 由
+Host `hook_dispatcher.py` 在派发前统一注入（`request_args = {"hook_name": hook_name, **dict(kwargs)}`），
+**每一个**命名 Hook 都会带上它，不是 `chat.receive.*` 特有。写 `set(kwargs) == {"message"}` 这类
+断言会误判；改 kwargs 回带时把 `hook_name` 原样保留即可。详见 `hooks-and-components.md` 的「Host 侧执行与校验」。
+
 **错误写法**：
 ```python
 @HookHandler("chat.receive.before_process", mode=HookMode.BLOCKING)
@@ -376,6 +381,15 @@ class MyPlugin(MaiBotPlugin):
 `config_version` 为空抛「...缺少 plugin.config_version 版本号，当前版本策略不再兼容无版本配置」。
 调用方捕获后置 `meta.config_error`，随后**仍以该状态注册**——Host 侧"仅加载配置管理，不启用业务"，
 invoke 时直接返回 `E_BAD_PAYLOAD`。所以这不是"完全拒载"，而是"装上了但全瘫"。
+
+⚠️ **两个实测边界（2026-10-17 运行实例负样本）**：
+1. **校验只对声明了 `config_model` 的插件生效**——`_prepare_plugin_config_for_version_update` 第一行
+   `if not default_config: return rebuild_plugin_config_data(raw_config, {}), False`：无配置模型的插件
+   （纯 Hook/Command 插件）磁盘缺 `[plugin].config_version` 也**完全跳过校验、正常加载**。
+   声明了模型时先校验 default_config、再校验磁盘配置；磁盘配置为空（首次生成）不校验、直接用默认值。
+2. **WebUI 插件列表看不出这个状态**：`GET /api/webui/plugins/installed` 里配置错误插件呈现
+   `enabled: true` + `load_status: "success"`（与"完全拒载"的 failed 不同），on_load 不执行、日志只有
+   warning「插件 {id} 配置错误，仅加载配置管理: …」。别拿列表状态当"业务正常"的证据。
 
 **错误写法**：
 ```toml
