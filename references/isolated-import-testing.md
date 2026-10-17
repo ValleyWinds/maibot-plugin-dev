@@ -238,6 +238,58 @@ manifest 必填清单（`PluginManifest`）：`manifest_version`、`version`、`
 ⚠️ `capabilities` 与代码调用点要**双向核对**：manifest 声明了但代码没用到 = 冗余声明；代码调了但 manifest 没声明 = 运行时被 Host 拦。
 少数 Host 侧内部能力（如消息路由 / 网关状态）不需要也无法写进 `capabilities`。
 
+## 对着运行中的 Host 验证（比离线导入更强一档）
+
+三档证据强度：离线 import 插件（上文）< 跑 Host 自带测试套件 < 打运行中实例的真实端点。
+凡属「会不会注册失败 / 校验在哪个环节触发 / 返回值实际长什么样」这类问题，只有后两档能定论。
+
+### 建环境与跑套件
+
+```bash
+cd <MaiBot 仓库>
+uv sync --frozen                                   # 有 uv.lock；requires-python >= 3.12
+uv run pytest pytests/plugin_runtime pytests/webui -q -p no:cacheprovider
+```
+
+- uv 可能替 `.venv` 挑它自己管理的**新主版本**（实测装到 3.14），而生产实例常见 3.12/3.13。
+  测试结果一般不受影响，但**别把 3.14 上的行为当生产行为**；要贴近生产就 `uv sync --frozen -p 3.12` 重建。
+- 实测基线（Host 1.3.9）：`pytests/plugin_runtime` **216/217 passed**，`pytests/webui` 插件相关四个文件 **64 passed**。
+- ⚠️ 那唯一的失败 `test_adapter_lifecycle.py::test_adapter_plugins_can_be_taken_offline_and_restored_exactly`
+  是**测试夹具问题，不是运行缺陷**，别去"修源码"：夹具 `_build_runtime_manager` 用
+  `object.__new__(PluginRuntimeManager)` 绕过 `__init__`，没设 `_status_listeners`，
+  而 `take_adapters_offline` 现在会经 `_notify_status_changed` 读它（`integration.py`，
+  引入该调用的是提交 `e24a8c9fb`）。生产路径永远走 `__init__`。
+
+### 打真实端点（鉴权是 Cookie）
+
+WebUI 的鉴权走 **Cookie `maibot_session`**，缺它一律 `401 未授权：无效的访问令牌`。可用的只读端点：
+
+| 端点 | 能验什么 |
+| --- | --- |
+| `GET /api/webui/plugins/installed` | 插件的 `enabled` / `load_status`（`disabled` / `failed` / 正常） |
+| `GET /api/webui/plugins/runtime/hooks` | Host 真实 Hook 注册表——**数量与名字直接对表**（1.3.9 实测 22 个） |
+| `GET /api/webui/plugins/runtime/commands` | `name` 原样返回（不带 `/`）、`aliases` 带 `/`、`permission`、`pattern` |
+| `GET /api/webui/plugins/runtime/webui` | `schema_version: 2` + 四项 `capabilities` + 各插件扩展 |
+| `GET /api/webui/plugins/runtime/home-cards` | 首页卡片注册结果 |
+| `POST /api/webui/plugins/config/{plugin_id}/toggle` | **无请求体**，就地翻转 `enabled` 并触发激活/停用链路 |
+
+- token 来源：首次启动会生成并存 `data/webui.json`，同时**明文打印在启动日志**里（`webui.app` 的
+  「🔑 WebUI 登录 Token」一行）。日志别外传；要换就 `POST /api/webui/auth/regenerate`。
+- 插件目录下的 `config.toml` 被 gitignore，`toggle` 来回翻转不会把仓库弄脏；但仍建议**在 `finally`
+  里把状态恢复原样**，并跑一次 `git status --short` 确认。
+
+### 最容易白验的一点
+
+**禁用态的插件不会激活**：`runner_main._prepare_plugin_activation` 读到 `enabled=false` 直接返回
+`INACTIVE` 并跳过后续流程，于是整条注册链路（含 `load_webui_extension`、manifest 一致性、能力授权）
+**根本不会执行**——带着非法 `webui.json` 的插件可以长期「看起来没报错」（上游示例就是这种状态）。
+所以验证任何「会导致注册失败」的断言，要么实际启用一次再看日志与 `load_status`，要么离线直接调权威函数：
+
+```python
+from src.plugin_runtime.webui_schema import load_webui_extension   # ValidationError ⊂ ValueError
+load_webui_extension(Path("<插件目录>"))
+```
+
 ## GitHub 克隆
 
 仓库在国内直连慢/超时，用前缀式镜像：

@@ -564,7 +564,18 @@ Runner `_handle_reload_webui_documents`（`src/plugin_runtime/runner/runner_main
   在当前 v2 模型下校验失败，报 `WebUI 协议已升级为 2；请按 docs/plugin-webui.md 迁移声明`；
   该文件还使用了 v2 已移除的 `repeat` 组件与 `scope: "item"`（`DataReference.scope` 只接受
   query/selection）。这是全仓库唯一的 `webui.json` 实例，即自带示例本身不符合 v2 协议，
-  与「不转换任何已移除的组件或字段」的注释一致。无法确认这是未提交的过渡状态还是已知问题。
+  与「不转换任何已移除的组件或字段」的注释一致。
+- ⚠️ **坏声明会导致插件整个注册失败，不只是页面丢失**（Host 1.3.9 运行时实测链路）：
+  `runner_main._register_plugin` 中 `load_webui_extension` 抛出的 `ValidationError` 是 `ValueError`
+  子类，被它的 `except (OSError, ValueError)` 接住 → 记 `插件 {id} WebUI 声明无效: …` 并 `return False`；
+  上层依次是 `PluginSupervisor` 的「`插件 {id} 重载失败: 插件初始化失败（已恢复旧版本）`」→
+  `PluginRuntimeManager.apply_plugin_config` 抛 `RuntimeError` → WebUI
+  `POST /api/webui/plugins/config/{plugin_id}/toggle` 返回 **409**，插件列表变成
+  `enabled: true` + `load_status: failed`（配置已写、运行时没起来）。
+- **禁用态不触发这个校验**：`runner_main._prepare_plugin_activation` 在 `enabled=false` 时直接返回
+  `INACTIVE` 并跳过激活，所以带非法 `webui.json` 的插件可以长期安静地躺在仓库里不报错——上游示例
+  正是这样（启用它才会看到上面那条错误）。别把「它没报错」当成「声明合法」的证据：离线
+  `load_webui_extension(插件目录)` 或实际启用一次才算验证。
 - 错误文案指向的 `docs/plugin-webui.md` 不存在；官方 `webui-pages.md` 的示例与能力名
   （`file_upload` / `interactive_controls`、声明式页内的 `upload` 组件）均与 Host 源码不符。
 - `ImageUpload.image_max_edge` 声明了 1-8192 的范围，但宿主上传链路
@@ -572,5 +583,8 @@ Runner `_handle_reload_webui_documents`（`src/plugin_runtime/runner/runner_main
   `lib/upload-image.ts` 的 `prepareUploadImage`（声明时前端把单文件上限放宽到 64 MiB 再压缩）。
 - `CustomPage.layout` 的 `document` / `viewport` 两种取值在 `layout === 'document'` 时由
   ResizeObserver 上报高度；`viewport` 的完整渲染差异未在本次阅读范围内确认。
-- `pytests/webui/test_plugin_webui_extensions.py` 与 `test_plugin_uploads.py` 未能在本机跑通
-  （依赖链不全），本文行为结论均来自直接调用权威模型与函数的实测，而非测试套件结果。
+- 本文的运行时结论有三处来源：① 直接调用权威模型与函数（`load_webui_extension`、`WebUIExtension.model_validate`）；
+  ② 测试套件——`uv sync --frozen` 后 `pytests/webui/test_plugin_webui_extensions.py` 与
+  `test_plugin_uploads.py` 共 **61 passed**、`pytests/webui` 插件相关四个文件 64 passed、
+  `pytests/plugin_runtime` 216/217 passed；③ 对着运行中的 Host 打真实端点（见
+  `isolated-import-testing.md` 的「对着运行中的 Host 验证」一节）。
