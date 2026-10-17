@@ -1,0 +1,2 @@
+# 统一 LF：本仓库是技能文本，行尾一致才能保证 git diff 精确到行（增量维护的 recon 依赖它）
+* text=auto eol=lf
