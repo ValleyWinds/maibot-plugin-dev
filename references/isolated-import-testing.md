@@ -159,7 +159,7 @@ mod._split_text_at_brackets("...")       # 直接调纯函数
   只要 stub 里**同时提供** `Field` 和 `PluginConfigBase`，走的就是 stub 分支，无需安装 pydantic。
   反之若只提供一部分，就可能落进 `except` 分支去找 pydantic 而失败。
 - **插件目录内的相对导入会让裸 `spec_from_file_location` 直接失败**。多文件插件普遍写成
-  `from .config import MyPluginConfig` 这种写法（如 `Maizone/plugin.py`、`Sleep-Manager/plugin.py`）；不设 `submodule_search_locations` 且不给 `mod.__path__` 赋值，
+  `from .config import MaizonePluginConfig`（`Maizone/plugin.py`）、`from .config_models import GoodnightSleepManagerConfig`（`Sleep-Manager/plugin.py`）这种相对导入；不设 `submodule_search_locations` 且不给 `mod.__path__` 赋值，
   `exec_module` 时抛 `ImportError: attempted relative import with no known parent package`。
   这不是插件 bug，是加载方式不对——照上面第 3 步写即可。
 - **注解在函数定义时求值**。`def f(self, task_config: TaskConfig)` 这种注解会在 `def` 执行时求值（没有 `from __future__ import annotations`），

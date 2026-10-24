@@ -68,7 +68,7 @@ my-plugin/
 - `create_plugin()` 工厂函数
 
 `_manifest.json` 必填字段（缺任一都会注册失败）：
-`manifest_version`(只支持 2) / `id`（须匹配 `^[A-Za-z0-9_]+(?:[.-][A-Za-z0-9_]+)+$`，至少两段） / `version`（严格三段式 X.Y.Z） / `name` / `description` / `license` / `author{name,url}` / `urls.repository` / `host_application{min_version,max_version}` / `sdk{min_version,max_version}` / **`capabilities`**（数组，无默认值，缺失即 Pydantic missing；可为空数组，不允许空字符串项） / `i18n{default_locale, locales_path, supported_locales}`。
+`manifest_version`(只支持 2) / `id`（须匹配 `^[A-Za-z0-9_]+(?:[.-][A-Za-z0-9_]+)+$`，至少两段） / `version`（严格三段式 X.Y.Z） / `name` / `description` / `license` / `author{name,url}` / `urls.repository` / `host_application{min_version,max_version}` / `sdk{min_version,max_version}` / **`capabilities`**（数组，无默认值，缺失即 Pydantic missing；可为空数组，不允许空字符串项） / `i18n`（对象必填；其中仅 `default_locale` 必填，`locales_path` / `supported_locales` 可选——缺省为 None / 空列表，模板就只写这两键）。
 
 常用可选字段：
 - `plugin_type`：缺省 `"extension"`，接受别名 `type`；唯一有语义的特殊值是 `"adapter"`（决定归 builtin 还是 third_party Supervisor）。
@@ -209,7 +209,7 @@ class MyPlugin(MaiBotPlugin):
 - `references/webui-pages.md` — `webui.json` 声明式 WebUI 页面协议（当前版本的一等公民；内容抽查与 1.3.15 源码一致，文件自带更细的校对基线行）
 - `references/isolated-import-testing.md` — 脱离宿主导入 plugin.py 做纯函数验证的 stub harness 套路（review / 排障陌生插件时用）
 - `references/plugin-testing.md` — 插件测试流程：离线导入 → 本地实例热加载实测 → 收录前自检（第一次写插件从这里走）
-- `assets/plugin-template/` — 插件模板文件（plugin.py / config.py / _manifest.json / config.toml）
+- `assets/plugin-template/` — 插件模板文件（plugin.py / config.py / _manifest.json / 防泄漏 .gitignore）
 
 ## 语言环境
 

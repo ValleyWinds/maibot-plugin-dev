@@ -1,6 +1,6 @@
 """插件配置模型模板。
 
-> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-15 逐行对照源码复核）
+> **校对基线：SDK 2.16.0 + MaiBot Host 1.3.15**（2026-10-24 对照源码复核导入符号与配置语义）
 
 基于 MaiBot SDK PluginConfigBase + pydantic Field。
 声明 config_model 后，self.config 返回强类型实例，WebUI Schema 自动生成。

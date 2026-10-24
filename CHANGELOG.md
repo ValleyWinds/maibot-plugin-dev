@@ -10,7 +10,7 @@
 
 - **2.15.0**：新增第 19 个能力代理 `ctx.market`，只读查询插件市场：`search(query, *, category/page/limit/sort_by/compatible_only/include_manifest/include_stats/force_refresh)`、`get_detail(plugin_id)`、`get_readme(plugin_id, *, max_chars=8000/prefer_local/branch/force_refresh)`；三个能力需在 manifest `capabilities` 分别声明。
 - **2.16.0**：新增 `ctx.maisaka.reply.generate(stream_id, reference, *, format_instruction="", model_name="", timeout_ms=None)`，生成符合麦麦人格的长文、结果交由插件自行发送；`ctx.maisaka.context.append()` 新增 `replyable` / `user_info` 仅关键字参数，用于保留真实作者与消息编号。
-- Host 侧：能力注册表扩到 **80 个能力名**（新增 `market.search` / `market.get_detail` / `market.get_readme` / `maisaka.reply.generate`）；Hook 清单修正为 22 个——删掉了 3 个旧基线条目（`emoji.register.after_build_emotion`、`jargon.query.before_search`、`jargon.query.after_search`，当前源码全仓 grep 零命中，系上一版误收，文档中已改为「不存在、勿订阅」的警示行）；SDK 超出版本区间改为只 warning 放行，不再拒载。
+- Host 侧：能力注册表扩到 **81 个能力名**（新增 `market.search` / `market.get_detail` / `market.get_readme` / `maisaka.reply.generate`）；Hook 清单修正为 22 个——删掉了 3 个旧基线条目（`emoji.register.after_build_emotion`、`jargon.query.before_search`、`jargon.query.after_search`，当前源码全仓 grep 零命中，系上一版误收，文档中已改为「不存在、勿订阅」的警示行）；SDK 超出版本区间改为只 warning 放行，不再拒载。
 - 收录事实补记：插件中心**收录审核不接受 `999.999.999` 上界**（实测拦截），锁已实测次版本线的写法同时是收录硬门槛。
 - 新增 `references/plugin-testing.md`（插件测试流程：离线导入 → 本地实例 → 收录前自检）。
 - 新增 `assets/plugin-template/.gitignore`（`config.toml` 运行时自动生成勿上传、`.env` 与密钥防泄漏）。
