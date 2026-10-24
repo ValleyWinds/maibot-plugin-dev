@@ -6,7 +6,7 @@ description: MaiBot 插件发布与收录参考：plugin-repo 收录流程、Rel
 # 插件发布与收录（plugin-repo）
 
 > **校对基线：SDK 2.16.0 + MaiBot Host 1.3.15**（2026-10-24 逐行对照源码复核）
-> 收录规则来源：官方社区插件索引仓库 [Mai-with-u/plugin-repo](https://github.com/Mai-with-u/plugin-repo)（`README.md` / `CONTRIBUTING.md` / `VERSIONING.md`，2026-10-17 核对）
+> 收录规则来源：官方社区插件索引仓库 [Mai-with-u/plugin-repo](https://github.com/Mai-with-u/plugin-repo)（`README.md` / `CONTRIBUTING.md` / `VERSIONING.md`，2026-10-17 核对、2026-10-24 线上复验一致）
 > 与官方文档 `docs/zh/plugin/submission.md`；manifest 校验行为以 Host `src/plugin_runtime/runner/manifest_validator.py` 为准
 
 插件本体留在各自的公开 GitHub 仓库，plugin-repo 维护三份索引：
@@ -73,6 +73,10 @@ description: MaiBot 插件发布与收录参考：plugin-repo 收录流程、Rel
 
 > ⚠️ **AI 审核每个 Issue 上限 8 次**：初次、重审、已开始但失败的都计入（Issue 显示 `已审核：x次 / 8次`）。
 > 达上限后 manifest 仍可验证，但不再 AI 审核。**提交前先在本地把 manifest / Release 对齐跑一遍，别浪费次数。**
+>
+> 同步与批次节奏（上游 `VERSIONING.md`）：索引每日北京时间 **02:00 与 15:00** 两次同步；每个 `plugin-release`
+> 审核批次按发布时间**最多取最新 5 个版本**送 AI 审核、其余版本跳过——一口气发超过 5 个 Release，
+> 多出来的版本不会进本批次。
 
 ## 2. Tag / version / id 一致性
 
@@ -116,9 +120,12 @@ description: MaiBot 插件发布与收录参考：plugin-repo 收录流程、Rel
   - `host_application.max_version` 锁在**当前已实测通过的次版本线**（如 `1.3.99`），`min_version` 按真实依赖写。
     Host 侧有「同主次版本更高版本仅 warning」的容忍规则（见 §3.2），锁 `1.3.99` 不会被 1.3.x 内的补丁升级误挡；
     MaiBot 进入新小线（1.4/2.x）时插件被挡是**有意的刹车**——实测新 Host 兼容后抬界、发新 Release。
-    ⚠️ 官方文档与官方内置插件（`plugin_management`）示范的是把上界放到 `999.999.999`、只认真约束 `min_version`，
-    但插件中心**收录审核不接受 `999.999.999` 上界——上架时会被拦截、无法通过收录**（2026-10 实测）。
-    因此本技能推荐锁已实测次版本线的写法：它同时是兼容策略与收录硬门槛的要求，与官方示范的差异以此为准，不是笔误。
+    ⚠️ 官方三处示范的口径本就不一致（2026-10-24 线上核对）：文档站与官方内置插件（`plugin_management`）示范把上界放到
+    `999.999.999`、只认真约束 `min_version`；plugin-repo 的 `CONTRIBUTING.md` 官方示例则是 `host_application: 1.0.0 ~ 1.99.99`
+    （跨整条 1.x 线）。而插件中心**收录审核不接受 `999.999.999` 上界——上架时会被拦截、无法通过收录**（2026-10 实测）。
+    本技能推荐锁已实测次版本线：它同时是兼容策略与收录硬门槛的要求，与官方示范的差异以此为准，不是笔误——
+    上界放到 `999.999.999` 等于对还没发布的大版本预先声明兼容，而新大版本很可能有不兼容变更；锁在已实测的小版本线，
+    让插件在新小线前停下来，由作者**先测试、适配新版，再抬界发新 Release**。
   - `sdk` 区间锁在 2.x 线：`min_version` 按实际依赖的 SDK 写、**上界按 `2.99.99`**。
     官方模板插件 `plugins/hello_world_plugin/_manifest.json` 实测即 `sdk.min_version: 2.0.0` /
     `sdk.max_version: 2.99.99`（其 `host_application` 为 `1.3.0` ~ `1.3.99`）。
