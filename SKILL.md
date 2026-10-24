@@ -47,6 +47,7 @@ my-plugin/
 ├── webui.json           # 可选：声明式 WebUI 自定义页面
 ├── i18n/                # 可选：国际化资源（zh-CN.json / en-US.json；⚠️ 当前 Host 无运行时加载点，见偏差清单）
 ├── assets/              # 可选：静态资源
+├── tests/               # 可选：插件自己的测试（Host 不加载；官方 vibe-coding 页有列，隔离导入 harness 建议放这里）
 └── config.toml          # 运行时生成：首次加载由 Runner 按 config_model 生成——勿上传，.gitignore 应包含 /config.toml（官方文档同款要求）
 ```
 
