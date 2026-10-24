@@ -23,41 +23,53 @@ stub harness 把 SDK 整个替掉，适合验导入契约；测**业务逻辑**�
 - `plugin.set_plugin_config(dict)` —— 注入配置、拿到强类型 `self.config`。**注入的 dict 必须带 `[plugin].config_version` 节**，且配置模型要声明 `plugin` 节（缺任一，默认配置生成阶段就抛 `PluginConfigVersionError`，与 `common-pitfalls.md` 陷阱 12 同源）；只带必需节时业务字段走模型默认值。
 - `plugin._set_context(PluginContext(plugin_id, rpc_call=fake))` —— 注入假 RPC 通道：SDK 的参数组包、返回归一化都是真的，只有到 Host 的最后一跳是假的，能断言到 wire 级参数。
 
+**模板自带这套脚手架**：`assets/plugin-template/` 里的 `tests/`（conftest + 注入示例）与 `pyproject.toml`（pytest 配置）复制即用，下面的示例即模板所带、实测通过的版本。
+
 ```python
-# tests/conftest.py —— 隔离加载 plugin.py（多文件插件另见 isolated-import-testing.md）
+# tests/conftest.py —— 隔离加载 plugin.py（相对导入安全的完整姿势）
+# ⚠️ 裸 spec_from_file_location 加载带 `from .config import ...` 的多文件插件会直接
+#    ImportError，必须设 submodule_search_locations + __path__ 并先注册 sys.modules
+import sys
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 import pytest
 
+PLUGIN_DIR = Path(__file__).parents[1]
+
 @pytest.fixture(scope="session")
 def plugin_module():
-    spec = spec_from_file_location("my_plugin", Path(__file__).parents[1] / "plugin.py")
+    spec = spec_from_file_location(
+        "my_plugin", PLUGIN_DIR / "plugin.py",
+        submodule_search_locations=[str(PLUGIN_DIR)],
+    )
     module = module_from_spec(spec)
+    module.__path__ = [str(PLUGIN_DIR)]
+    sys.modules["my_plugin"] = module
     spec.loader.exec_module(module)
     return module
 ```
 
 ```python
-# tests/test_logic.py —— 两个注入点合用（SDK 2.16.0 实测通过）
+# tests/test_plugin.py —— 两个注入点合用，测模板自带的 cmd_my_cmd（SDK 2.16.0 实测通过）
 import asyncio
 from maibot_sdk.context import PluginContext
 
 def test_config_injection(plugin_module):
     plugin = plugin_module.create_plugin()
-    plugin.set_plugin_config({"plugin": {"config_version": "1.0.0"}, "api_key": "test-secret"})
-    assert plugin.config.api_key == "test-secret"
+    plugin.set_plugin_config({"plugin": {"config_version": "1.0.0"}})
+    assert plugin.config.plugin.config_version == "1.0.0"
 
-def test_fake_rpc(plugin_module):
-    plugin = plugin_module.create_plugin()
-
+def test_command_with_fake_rpc(plugin_module):
     async def fake_rpc(method, plugin_id, payload):
-        assert payload["capability"] == "send.text"
-        assert payload["args"]["text"] == "hi"     # wire 级断言（args 还会自动带 return_details: False）
+        assert method == "cap.call"
+        assert payload["capability"] == "send.text"      # wire 级断言
+        assert payload["args"]["text"] == "命令执行成功"
         return {"success": True}
 
-    plugin._set_context(PluginContext("demo.plugin", rpc_call=fake_rpc))
-    ok = asyncio.run(plugin.notify(stream_id="s1", text="hi"))
-    assert ok is True                              # send.text 按 success 归一化返回 bool
+    plugin = plugin_module.create_plugin()
+    plugin._set_context(PluginContext("com.example.my-plugin", rpc_call=fake_rpc))
+    success, response, level = asyncio.run(plugin.cmd_my_cmd(stream_id="s1"))
+    assert success is True and level == 1               # send.text 按 success 归一化返回 bool
 ```
 
 ### tests/ 的工程化惯例（官方文档只有目录树一行，无内容说明）

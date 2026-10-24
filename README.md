@@ -27,7 +27,7 @@ maibot-plugin-dev/
 │   ├── isolated-import-testing.md#   脱离宿主做纯函数验证的 stub 套路
 │   └── plugin-repo-submission.md #   插件仓库提交、收录规则与安全检查
 ├── maintenance/baseline.json     # 机器可读校对基线（技能更新工作流用）
-└── assets/plugin-template/       # 插件模板（_manifest.json / plugin.py / config.py / __init__.py / 防泄漏 .gitignore）
+└── assets/plugin-template/       # 插件模板（_manifest.json / plugin.py / config.py / __init__.py / 防泄漏 .gitignore / tests/ 测试脚手架 / pyproject.toml）
 ```
 
 安装方式：把本目录整体放进 `~/.zcode/skills/` 即可被 ZCode 自动发现。没有 ZCode 也没关系——`references/` 下全部是纯 Markdown，可以作为上下文直接提供给任何 AI 编程助手使用。

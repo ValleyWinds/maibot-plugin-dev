@@ -47,7 +47,7 @@ my-plugin/
 ├── webui.json           # 可选：声明式 WebUI 自定义页面
 ├── i18n/                # 可选：国际化资源（zh-CN.json / en-US.json；⚠️ 当前 Host 无运行时加载点，见偏差清单）
 ├── assets/              # 可选：静态资源
-└── tests/               # 可选：插件自己的测试（Host 不加载；官方 vibe-coding 页有列，隔离导入 harness 建议放这里）
+└── tests/               # 可选：插件自己的测试（Host 不加载；模板已自带 conftest + SDK 注入点示例，复制即跑）
 ```
 
 上树的都是**仓库内容**（进 git 的）。运行时 `config.toml` 例外：它由 Runner 首次加载时按 `config_model` 自动生成在插件目录下，**不是仓库内容**——官方文档明确要求插件仓库的 `.gitignore` 应包含 `/config.toml`，不要手工创建或上传它。
@@ -210,7 +210,7 @@ class MyPlugin(MaiBotPlugin):
 - `references/webui-pages.md` — `webui.json` 声明式 WebUI 页面协议（当前版本的一等公民；内容抽查与 1.3.15 源码一致，文件自带更细的校对基线行）
 - `references/isolated-import-testing.md` — 脱离宿主导入 plugin.py 做纯函数验证的 stub harness 套路（review / 排障陌生插件时用）
 - `references/plugin-testing.md` — 插件测试流程：离线导入 → 本地实例热加载实测 → 收录前自检（第一次写插件从这里走）
-- `assets/plugin-template/` — 插件模板文件（plugin.py / config.py / _manifest.json / 防泄漏 .gitignore）
+- `assets/plugin-template/` — 插件模板文件（plugin.py / config.py / _manifest.json / 防泄漏 .gitignore / tests/ 测试脚手架 / pyproject.toml pytest 配置）
 
 ## 语言环境
 
