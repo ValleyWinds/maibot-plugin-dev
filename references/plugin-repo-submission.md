@@ -116,6 +116,9 @@ description: MaiBot 插件发布与收录参考：plugin-repo 收录流程、Rel
   - `host_application.max_version` 锁在**当前已实测通过的次版本线**（如 `1.3.99`），`min_version` 按真实依赖写。
     Host 侧有「同主次版本更高版本仅 warning」的容忍规则（见 §3.2），锁 `1.3.99` 不会被 1.3.x 内的补丁升级误挡；
     MaiBot 进入新小线（1.4/2.x）时插件被挡是**有意的刹车**——实测新 Host 兼容后抬界、发新 Release。
+    ⚠️ 官方文档与官方内置插件（`plugin_management`）示范的是把上界放到 `999.999.999`、只认真约束 `min_version`，
+    但插件中心**收录审核不接受 `999.999.999` 上界——上架时会被拦截、无法通过收录**（2026-10 实测）。
+    因此本技能推荐锁已实测次版本线的写法：它同时是兼容策略与收录硬门槛的要求，与官方示范的差异以此为准，不是笔误。
   - `sdk` 区间锁在 2.x 线：`min_version` 按实际依赖的 SDK 写、**上界按 `2.99.99`**。
     官方模板插件 `plugins/hello_world_plugin/_manifest.json` 实测即 `sdk.min_version: 2.0.0` /
     `sdk.max_version: 2.99.99`（其 `host_application` 为 `1.3.0` ~ `1.3.99`）。

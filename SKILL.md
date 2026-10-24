@@ -10,7 +10,8 @@ agent_created: true
 
 本技能提供 MaiBot Plugin SDK 插件开发的核心知识与最佳实践，基于真实插件开发中踩过的坑提炼而成。涵盖 SDK 能力代理签名、组件装饰器、Hook 系统、配置模型、常见陷阱和插件模板。入口文件只放规范要点与陷阱索引，细节一律在 `references/` 下展开。
 
-> **校对基线：SDK 2.16.0 + MaiBot Host 1.3.15**（2026-10-24 逐行对照源码复核）
+> **校对基线：SDK 2.16.0 + MaiBot Host 1.3.15**（2026-10-24 逐行对照源码复核；docs 基点 5aa7365）
+> 机器可读基线（含三个仓库的基点 SHA 与 Hook/能力名清单）在 `maintenance/baseline.json`，技能更新工作流靠它做增量 recon。
 > 相对上一版的变更摘要（相对本文件上一版基线）：
 > - **2.15.0**：新增第 19 个能力代理 `ctx.market`，只读查询插件市场：`search(query, *, category/page/limit/sort_by/compatible_only/include_manifest/include_stats/force_refresh)`、`get_detail(plugin_id)`、`get_readme(plugin_id, *, max_chars=8000/prefer_local/branch/force_refresh)`；三个能力需在 manifest `capabilities` 分别声明。
 > - **2.16.0**：新增 `ctx.maisaka.reply.generate(stream_id, reference, *, format_instruction="", model_name="", timeout_ms=None)`，生成符合麦麦人格的长文、结果交由插件自行发送；`ctx.maisaka.context.append()` 新增 `replyable` / `user_info` 仅关键字参数，用于保留真实作者与消息编号。
@@ -144,7 +145,7 @@ class MyConfig(PluginConfigBase):
   （其 docstring 明确「插件配置模型无需声明它」）。模型里再声明会多出一个与顶部启停开关同键的冗余 switch。
   需要自研开关请放业务节并换个名字（如 `[features].xxx_enabled`）
 - **⚠️ 字段建议放进命名 `PluginConfigBase` 子类节**（如 `infos_section: InfosSectionConfig`，对应 TOML 结构
-  `[infos_section]` / `[[infos_section.infos]]`）：Host 1.3.9 已实现虚拟节折叠——根级扁平字段由
+  `[infos_section]` / `[[infos_section.infos]]`）：Host 自 1.3.8 起已实现虚拟节折叠——根级扁平字段由
   `config_routes.py` 的 `_get_virtual_general_field_names` 识别、`_fold_root_fields_into_virtual_general` 读取时折进
   `general` 虚拟节正常显示、`_unfold_virtual_general_into_root` 保存时还原回根级，表单读写不再错位。
   仍推荐命名节的理由是：分组清晰、字段在 TOML 里有归属节、嵌套列表与 schema 组织更顺
@@ -203,7 +204,7 @@ class MyPlugin(MaiBotPlugin):
 - `references/common-pitfalls.md` — 常见陷阱的详解和修复方案；另附附录：planner items/output_items 协议、`@Command` 的 aliases 匹配语义、删除配置字段与 config_version 重建语义、插件发布与收录规则
 - `references/hooks-and-components.md` — Hook 系统清单（22 个 Hook 的真实 kwargs）+ 全部组件装饰器
 - `references/reply-extensions.md` — `@ReplyExtension` 回复扩展：两阶段协议、消息组格式、失败语义、平台作用域
-- `references/webui-pages.md` — `webui.json` 声明式 WebUI 页面协议（当前版本的一等公民，已按 Host 1.3.15 重写）
+- `references/webui-pages.md` — `webui.json` 声明式 WebUI 页面协议（当前版本的一等公民；内容抽查与 1.3.15 源码一致，文件自带更细的校对基线行）
 - `references/isolated-import-testing.md` — 脱离宿主导入 plugin.py 做纯函数验证的 stub harness 套路（review / 排障陌生插件时用）
 - `assets/plugin-template/` — 插件模板文件（plugin.py / config.py / _manifest.json / config.toml）
 
