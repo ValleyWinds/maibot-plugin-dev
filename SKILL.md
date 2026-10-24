@@ -10,7 +10,7 @@ agent_created: true
 
 本技能提供 MaiBot Plugin SDK 插件开发的核心知识与最佳实践，基于真实插件开发中踩过的坑提炼而成。涵盖 SDK 能力代理签名、组件装饰器、Hook 系统、配置模型、常见陷阱和插件模板。入口文件只放规范要点与陷阱索引，细节一律在 `references/` 下展开。
 
-> **校对基线：SDK 2.16.0 + MaiBot Host 1.3.15**（2026-10-24 逐行对照源码复核；docs 基点 5aa7365）
+> **校对基线：SDK 2.16.0 + MaiBot Host 1.3.15**（2026-10-24 逐行对照源码复核；基点：MaiBot `062d45cf` / SDK `835e0e9` / docs `5aa7365`）
 > 机器可读基线（含三个仓库的基点 SHA 与 Hook/能力名清单）在 `maintenance/baseline.json`，技能更新工作流靠它做增量 recon。
 > 相对上一版的变更摘要（相对本文件上一版基线）：
 > - **2.15.0**：新增第 19 个能力代理 `ctx.market`，只读查询插件市场：`search(query, *, category/page/limit/sort_by/compatible_only/include_manifest/include_stats/force_refresh)`、`get_detail(plugin_id)`、`get_readme(plugin_id, *, max_chars=8000/prefer_local/branch/force_refresh)`；三个能力需在 manifest `capabilities` 分别声明。
