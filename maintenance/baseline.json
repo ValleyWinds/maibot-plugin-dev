@@ -1,0 +1,62 @@
+{
+  "versions": {
+    "sdk": "2.14.0",
+    "host": "1.3.9"
+  },
+  "shas": {
+    "host": "ac6ed61b7b9c971ad94921de3b16fa6f63c36a20",
+    "sdk": "e61ca95f0e516a61dadb636a2e7412af93a97f33",
+    "docs": "32874ab9214099637204d5f79445244f11dcc105"
+  },
+  "invariants": {
+    "hooks": [
+      "chat.receive.before_process",
+      "chat.receive.after_process",
+      "chat.command.before_execute",
+      "chat.command.after_execute",
+      "send_service.after_build_message",
+      "send_service.before_send",
+      "send_service.after_send",
+      "maisaka.planner.before_request",
+      "maisaka.planner.after_response",
+      "maisaka.replyer.before_request",
+      "maisaka.replyer.before_model_request",
+      "maisaka.replyer.after_response",
+      "maisaka.reply.before_post_process",
+      "emoji.maisaka.before_select",
+      "emoji.maisaka.after_select",
+      "emoji.register.after_build_description",
+      "emoji.register.after_build_emotion",
+      "expression.select.before_select",
+      "expression.select.after_selection",
+      "expression.learn.after_extract",
+      "expression.learn.before_upsert",
+      "jargon.extract.before_persist",
+      "jargon.inference.before_finalize",
+      "jargon.query.before_search",
+      "jargon.query.after_search"
+    ],
+    "proxies": [
+      "send",
+      "llm",
+      "db",
+      "config",
+      "message",
+      "emoji",
+      "frequency",
+      "component",
+      "chat",
+      "person",
+      "knowledge",
+      "tool",
+      "api",
+      "gateway",
+      "render",
+      "maisaka",
+      "statistics",
+      "webui"
+    ],
+    "manifestCapabilities": []
+  },
+  "updatedAt": "2026-10-17"
+}
