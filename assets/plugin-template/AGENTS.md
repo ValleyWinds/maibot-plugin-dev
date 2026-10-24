@@ -4,9 +4,9 @@
 
 ## 权威参考（遇到疑问按此顺序查）
 
-1. **maibot-plugin-dev 技能**（本仓库的母技能：https://github.com/ValleyWinds/maibot-plugin-dev ）：SDK 代理签名、组件规范、Hook 清单、常见陷阱、发布收录规则——已逐行对照源码核对；其 `references/` 下全部是纯 Markdown，没装技能就直接克隆或浏览该仓库阅读。
-2. **本仓库 `docs/architecture.md`**：模块结构、数据流、设计取舍——改代码前先读它，改完同步它。
-3. SDK / MaiBot 主程序源码：技能标注了官方文档的已知偏差，行为疑问以源码为准。
+1. **本仓库 `docs/architecture.md`**：模块结构、数据流、设计取舍——改代码前先读它，改完同步它。
+2. **SDK / MaiBot 主程序源码**：行为疑问的唯一真相（源码在你本地或上游仓库）。
+3. **maibot-plugin-dev 技能**（https://github.com/ValleyWinds/maibot-plugin-dev ）：SDK 代理签名速查、组件规范、常见陷阱、发布收录规则——已逐行对照源码核对，**用作加速器而非最终答案**：它是快照，可能落后于你的环境；若其基线（SKILL.md 顶部基线行）低于当前 SDK / Host 版本、或所述与源码冲突，一律以源码为准。没装技能可直接克隆或浏览该仓库，`references/` 下全部是纯 Markdown。
 
 ## 开发规矩
 
