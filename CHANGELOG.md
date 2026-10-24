@@ -16,6 +16,7 @@
 - 新增 `assets/plugin-template/.gitignore`（`config.toml` 运行时自动生成勿上传、`.env` 与密钥防泄漏）。
 - `plugin-repo-submission.md` 新增「公开发布前安全检查」一节。
 - 变更摘要从 SKILL.md 迁出至本文件，SKILL.md 只保留校对基线行。
+- README 与 SKILL.md 的插件目录结构对齐官方「目录结构约定」（`webui.json` / `i18n/` / `assets/`），补记偏差：官方推荐的 `i18n/` 资源目录当前在 Host 无运行时加载点（`locales_path` 仅被插件市场元数据透传），实际生效的插件多语言是配置 UI 的 `__ui_i18n__` 机制。
 
 ## 2026-10-17：SDK 2.14.0 + MaiBot Host 1.3.9（基点 MaiBot `ac6ed61b` / SDK `e61ca95` / docs `32874ab`）
 

@@ -30,6 +30,7 @@ agent_created: true
 > - **官方文档内部自相矛盾**：能力代理数量两处口径不一且都落后于源码——官方文档 `api-reference.md` 写 18 种、`docs/zh/plugin/index.md`（中英同错）写 17 种；SDK 仓库 `README.md` 也写 17 种。装饰器数量同样矛盾：`index.md`（中英）写 9 种，SDK `docs/guide.md` 写 8 种并自称「对外推荐」、SDK `README.md` 写「7 种正式 + 1 种兼容」；而 `index.md` 的 9 种里其实含已废弃的 `@Action`。源码事实是 **19 个能力代理、9 个可用组件装饰器**（另有已废弃的 `Action` 与已移除的 `WorkflowStep`）。
 > - **SDK `docs/guide.md` 的方法表格落后于源码签名**：其 `send` 方法表未列 `return_details`（仅在正文有示例）、`message.get_by_id` 表格行缺 `include_binary_data`、`component.enable` / `disable` 表格行缺 `version`。能力代理清单本身已跟上（`guide.md` 的能力代理一节逐字列出 19 个，含 `webui` 与 `market`），签名一律以源码为准。
 > - **官方文档写错返回值语义**：`commands.md` 说 Command 三元组第三项是「命令优先级权重，数值越高优先级越高」——实际是拦截等级 `intercept_message_level`，非 0 即拦截消息（`result[0]` 反而被 Host 忽略）。`event-handlers.md` 教返回 `{"intercepted": True}` 拦截消息，该 key 运行时根本不认识，拦截不会生效；且 `ON_MESSAGE` 在主程序里已无发射点。
+> - **官方推荐的 `i18n/` 资源目录当前没有运行时加载点**：manifest 的 `i18n.locales_path` 唯一被消费的地方是插件市场的元数据透传（`plugin_market/catalog.py`），Host 不加载插件的语言资源文件。目前真正生效的插件多语言是配置 UI 的 `__ui_i18n__` / `json_schema_extra.i18n` 机制（见 `references/plugin-config.md`）——`i18n/` 可以按官方约定先建着，但别指望它现在能让界面变语言。
 > - **遇到行为疑问，以 SDK / 主程序源码为准**，本技能已标注所有已知偏差。
 
 关键页面：插件开发指南、Manifest 系统（`_manifest.json`）、生命周期、Hook 系统、组件（tools / commands / event-handlers / reply-extensions / home-cards / message-gateway / llmprovider）、配置管理。
@@ -42,9 +43,11 @@ agent_created: true
 my-plugin/
 ├── _manifest.json       # 必需：插件清单
 ├── plugin.py            # 必需：插件入口，含 create_plugin()
-├── config.py            # 可选：配置模型
-├── config.toml          # 可选：用户配置
-└── ...
+├── config.py            # 可选：配置模型（官方快速上手里也可并入 plugin.py，推荐单独成文件）
+├── webui.json           # 可选：声明式 WebUI 自定义页面
+├── i18n/                # 可选：国际化资源（zh-CN.json / en-US.json；⚠️ 当前 Host 无运行时加载点，见偏差清单）
+├── assets/              # 可选：静态资源
+└── config.toml          # 运行时生成：首次加载由 Runner 按 config_model 生成——勿上传，.gitignore 应包含 /config.toml（官方文档同款要求）
 ```
 
 `plugin.py` 必须包含：
@@ -63,7 +66,7 @@ my-plugin/
 - `create_plugin()` 工厂函数
 
 `_manifest.json` 必填字段（缺任一都会注册失败）：
-`manifest_version`(只支持 2) / `id`（须匹配 `^[A-Za-z0-9_]+(?:[.-][A-Za-z0-9_]+)+$`，至少两段） / `version`（严格三段式 X.Y.Z） / `name` / `description` / `license` / `author{name,url}` / `urls.repository` / `host_application{min_version,max_version}` / `sdk{min_version,max_version}` / **`capabilities`**（数组，无默认值，缺失即 Pydantic missing；可为空数组，不允许空字符串项） / `i18n{default_locale, supported_locales}`。
+`manifest_version`(只支持 2) / `id`（须匹配 `^[A-Za-z0-9_]+(?:[.-][A-Za-z0-9_]+)+$`，至少两段） / `version`（严格三段式 X.Y.Z） / `name` / `description` / `license` / `author{name,url}` / `urls.repository` / `host_application{min_version,max_version}` / `sdk{min_version,max_version}` / **`capabilities`**（数组，无默认值，缺失即 Pydantic missing；可为空数组，不允许空字符串项） / `i18n{default_locale, locales_path, supported_locales}`。
 
 常用可选字段：
 - `plugin_type`：缺省 `"extension"`，接受别名 `type`；唯一有语义的特殊值是 `"adapter"`（决定归 builtin 还是 third_party Supervisor）。

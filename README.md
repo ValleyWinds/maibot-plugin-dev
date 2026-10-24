@@ -2,35 +2,39 @@
 
 这是一个用于 ZCode 客户端的 Agent 技能（Skill），帮助你（或你的 AI 助手）开发、调试、重构 **MaiBot（麦麦）** 的 Plugin SDK 插件。技能内容基于对 MaiBot 主程序与 maibot-plugin-sdk 源码的逐行核对与运行时实测整理而成，涵盖：
 
-- **SDK 能力代理签名**（18 种 `ctx.*` 代理，逐方法核对）
+- **SDK 能力代理签名**（19 种 `ctx.*` 代理，逐方法核对）
 - **组件装饰器规范**（Tool / Command / HookHandler / API / ReplyExtension / HomeCard / MessageGateway / LLMProvider 等）
 - **Hook 系统清单**（22 个内置 Hook 的真实 kwargs 结构与返回值协议）
 - **配置模型与 WebUI**（`PluginConfigBase` 规范、`webui.json` 声明式页面协议 v2）
+- **测试与发布**（离线导入测试、本地实例实测流程、收录规则与防泄漏安全检查）
 - **常见陷阱**（均来自真实开发中的踩坑记录，按致命程度分级）
-- **插件模板**（`assets/plugin-template/`，可直接复制起步）
+- **插件模板**（`assets/plugin-template/`，可直接复制起步，自带防泄漏 `.gitignore`）
 
 ## 目录结构
 
 ```
 maibot-plugin-dev/
 ├── SKILL.md                      # 技能入口：核心规范 + 陷阱速查索引
+├── CHANGELOG.md                  # 技能自身的逐版本校对历史
 ├── references/                   # 详细参考（纯 Markdown，可整体喂给任意 LLM 会话）
-│   ├── sdk-api-reference.md      #   18 种能力代理完整签名
+│   ├── sdk-api-reference.md      #   19 种能力代理完整签名
 │   ├── hooks-and-components.md   #   22 个 Hook 的真实 kwargs + 全部组件装饰器
 │   ├── common-pitfalls.md        #   常见陷阱详解与修复方案
 │   ├── plugin-config.md          #   配置系统全解
 │   ├── webui-pages.md            #   webui.json 声明式页面协议 v2
 │   ├── reply-extensions.md       #   @ReplyExtension 两阶段协议
+│   ├── plugin-testing.md         #   插件测试流程（离线导入 → 本地实例 → 收录前自检）
 │   ├── isolated-import-testing.md#   脱离宿主做纯函数验证的 stub 套路
-│   └── plugin-repo-submission.md #   插件仓库提交与收录规则
-└── assets/plugin-template/       # 插件模板（_manifest.json / plugin.py / config.py / config.toml）
+│   └── plugin-repo-submission.md #   插件仓库提交、收录规则与安全检查
+├── maintenance/baseline.json     # 机器可读校对基线（技能更新工作流用）
+└── assets/plugin-template/       # 插件模板（_manifest.json / plugin.py / config.py / 防泄漏 .gitignore）
 ```
 
 安装方式：把本目录整体放进 `~/.zcode/skills/` 即可被 ZCode 自动发现。没有 ZCode 也没关系——`references/` 下全部是纯 Markdown，可以作为上下文直接提供给任何 AI 编程助手使用。
 
 ## ⚠️ 时效性声明
 
-本技能的校对基线是 **SDK 2.14.0 + MaiBot Host 1.3.9**。MaiBot 与 SDK 在独立且快速地迭代，**技能内容可能已经过时**——包括版本行为差异、能力注册表、Hook 清单等，都会随上游发版变化。
+本技能的校对基线是 **SDK 2.16.0 + MaiBot Host 1.3.15**（基点与历史见 `CHANGELOG.md`）。MaiBot 与 SDK 在独立且快速地迭代，**技能内容可能已经过时**——包括版本行为差异、能力注册表、Hook 清单等，都会随上游发版变化。
 
 请把这份技能当作**加速上手的地图**，而不是最终答案。遇到行为疑问，一律以下列顺序为准：
 
