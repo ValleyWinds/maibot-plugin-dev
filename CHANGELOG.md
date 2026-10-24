@@ -18,6 +18,7 @@
 - 变更摘要从 SKILL.md 迁出至本文件，SKILL.md 只保留校对基线行。
 - README 与 SKILL.md 的插件目录结构对齐官方「目录结构约定」（`webui.json` / `i18n/` / `assets/`），补记偏差：官方推荐的 `i18n/` 资源目录当前在 Host 无运行时加载点（`locales_path` 仅被插件市场元数据透传），实际生效的插件多语言是配置 UI 的 `__ui_i18n__` 机制。
 - 收编官方 vibe-coding 页目录树里的 `tests/`（官方无内容说明、Host 不加载）：SKILL.md 目录结构加条目，plugin-testing.md 明确隔离导入 harness 放 `tests/` 配合 pytest 维护，并补上官方「测试建议」里的停用/卸载清理测试项。
+- 模板移除 `config.toml` 示例文件：它是首次运行由 Runner 自动生成的运行时产物（官方目录约定不列、官方要求 `.gitignore` 排除 `/config.toml`），模板自带的 `.gitignore` 也忽略它——保留示例反而诱导作者提交。生成结构见 `references/plugin-config.md` 的对应示例。
 
 ## 2026-10-17：SDK 2.14.0 + MaiBot Host 1.3.9（基点 MaiBot `ac6ed61b` / SDK `e61ca95` / docs `32874ab`）
 

@@ -47,9 +47,10 @@ my-plugin/
 ├── webui.json           # 可选：声明式 WebUI 自定义页面
 ├── i18n/                # 可选：国际化资源（zh-CN.json / en-US.json；⚠️ 当前 Host 无运行时加载点，见偏差清单）
 ├── assets/              # 可选：静态资源
-├── tests/               # 可选：插件自己的测试（Host 不加载；官方 vibe-coding 页有列，隔离导入 harness 建议放这里）
-└── config.toml          # 运行时生成：首次加载由 Runner 按 config_model 生成——勿上传，.gitignore 应包含 /config.toml（官方文档同款要求）
+└── tests/               # 可选：插件自己的测试（Host 不加载；官方 vibe-coding 页有列，隔离导入 harness 建议放这里）
 ```
+
+上树的都是**仓库内容**（进 git 的）。运行时 `config.toml` 例外：它由 Runner 首次加载时按 `config_model` 自动生成在插件目录下，**不是仓库内容**——官方文档明确要求插件仓库的 `.gitignore` 应包含 `/config.toml`，不要手工创建或上传它。
 
 `plugin.py` 必须包含：
 - 继承 `MaiBotPlugin` 的插件类
