@@ -541,6 +541,31 @@ async def handle_api(self, **kwargs):
 跨插件调用时 Host 会再包一层 `{"success": True, "result": ...}` 返回给调用方
 （`capabilities/components.py` 的 `_cap_api_call`）。`public=False` 的 API 不可被跨插件调用。
 
+### 动态 API（运行时注册/注销）
+
+按配置或运行时条件决定是否暴露 API 时用动态注册（`MaiBotPlugin` 实例方法，SDK `plugin.py`）：
+
+- `self.register_dynamic_api(name, handler, *, description="", version="1", public=False, handler_name="", **metadata)` — 本地登记一个动态 API；`name` 空抛 `ValueError`，`handler_name` 留空自动生成 `dynamic_api__{name}__{version}`
+- `self.unregister_dynamic_api(name, *, version="1") -> bool` — 按 `name@version` 注销；handler 仍被其他动态 API 引用时不会被清理
+- `self.clear_dynamic_apis()` — 清空全部
+- `await self.sync_dynamic_apis(*, offline_reason="动态 API 已下线") -> bool` — **把当前集合同步到 Host**（内部就是 `ctx.api.replace_dynamic_apis`）
+- `self.get_dynamic_api_components()` — 读当前登记的组件声明
+
+⚠️ **register 只改插件本地状态，不同步不生效**——注册/注销/清空后都要 `await sync_dynamic_apis()`。
+典型节奏：`on_load` 里按 `self.config` 条件注册后 sync；`on_unload` 里 `clear_dynamic_apis()` +
+`sync_dynamic_apis(offline_reason="插件已卸载")`。
+
+| | `@API` 静态 | 动态注册 |
+|---|--------|---------|
+| 声明时机 | 类定义时 | 运行时（通常 on_load） |
+| 条件暴露 | 不支持 | 可按配置决定 |
+| 注销 | 不支持 | unregister / clear |
+| 同步 | 自动 | 手动 sync |
+| WebUI 页面绑定 | 支持 | **不支持**——自定义页面只能绑静态 API |
+
+命名建议：小写下划线、动词开头（`render_html` / `get_stats`），别用过于通用的名字；
+同名 API 可多版本并存，不兼容变更时递增 `version`。
+
 ---
 
 ## EventHandler 组件（@EventHandler）
@@ -610,6 +635,10 @@ return {"blocked": True}
 
 ## LLMProvider 组件（@LLMProvider）
 
+为 MaiBot 接入新的 LLM Provider：Host 把声明的 `client_type` 注册进 LLM 客户端注册表，
+模型配置 `api_providers[].client_type` 指向它之后，现有 LLMService 调用链**不用改**，
+请求自动走插件 Provider。
+
 ```python
 from maibot_sdk import LLMProvider
 
@@ -620,14 +649,54 @@ from maibot_sdk import LLMProvider
     version="1.0.0",
     **metadata: Any,
 )
-async def handle_llm(self, **kwargs):
+async def handle_llm(self, operation: str, request: dict[str, Any]) -> dict[str, Any]:
     ...
 ```
 
 **双向声明**：`_manifest.json` 的 `llm_providers` 与 `@LLMProvider` 必须同时声明，
-且 `declared_client_types` 与代码注册的 `registered_client_types` 排序后必须完全相等，否则注册失败
-（`runner/runner_main.py` 的 `llm_providers` 一致性校验）。
-处理器返回 `{"content": ...}` 等 dict；两个插件使用相同 `client_type` 会被双方禁载。
+且排序后逐一相等，否则注册失败（`runner/runner_main.py` 一致性校验）。
+两个插件声明相同 `client_type` 会被**双方禁载**；与主程序内置 Provider 重名则报
+「… 已由 host 注册」——起名建议带插件前缀（如 `com.example.my-plugin.provider`）。
+manifest 的 `llm_providers` 每项只写 `client_type` / `name` / `description` / `version`，
+**不要写 `handler_name` 或 `metadata`**（严格模式拒收）。
+
+### 处理方法与 Operation
+
+处理方法固定签名 `(operation: str, request: dict) -> dict`，按 `operation` 分三种请求：
+
+| operation | 能力 | 主要请求字段 | 返回字段 |
+|-----------|------|-------------|---------|
+| `response` | 文本/工具响应 | `message_list`、`tool_options`、`max_tokens`、`temperature`、`response_format` | `content`/`response`、`reasoning_content`、`tool_calls`、`usage` |
+| `embedding` | 文本向量化 | `embedding_input` | `embedding` |
+| `audio_transcription` | 语音识别 | `audio_base64`、`max_tokens` | `content` |
+
+三种请求都带公共字段 `model_info` / `api_provider` / `extra_params`。返回值是可序列化 dict，
+Host 识别 `content`（或 `response`）、`reasoning_content`（或 `reasoning`）、`embedding`、
+`tool_calls`、`usage`、`raw_data`。
+
+### LLMProviderBase 基类（逻辑较多时推荐）
+
+`from maibot_sdk import LLMProviderBase`：把 operation 分发给 `get_response()` /
+`get_embedding()` / `get_audio_transcriptions()`（`llm_provider.py` 的 `dispatch()`），
+只实现关心的能力。注意 **`get_response()` 是抽象方法必须实现**，另外两个可选
+（默认抛 `NotImplementedError`）：
+
+```python
+class MyProvider(LLMProviderBase):
+    async def get_response(self, request: dict[str, Any]) -> dict[str, Any]:
+        return {"content": "...", "usage": {...}}
+
+@LLMProvider("my.provider")
+async def handle_llm(self, operation: str, request: dict[str, Any]) -> dict[str, Any]:
+    return await self.provider.dispatch(operation, request)   # self.provider = MyProvider()
+```
+
+### 卸载回退与排错
+
+- 插件卸载 / 禁用 / 热重载失败时，Host 注销该插件拥有的 `client_type`，之后的请求按主程序模型回退策略换下一个可用模型。
+- **不支持 Host 侧自定义流式处理器 / 响应解析器**：流式对接在插件内部完成，只把最终结果作为普通返回值交给 Host（manifest 加字段也没用）。
+- 返回值带 `output_items` 时必须同时回传与当前 Host 一致的 `item_schema_version`，漏传或旧值抛 `RespParseException`；只回文本就只回 `content`，别手工拼 `output_items`。
+- 验收：WebUI 模型配置加一条 `api_providers`、`client_type` 填插件声明的值，跑一次对话看回复是否来自插件。
 
 ---
 
@@ -651,6 +720,29 @@ async def handle_gateway(self, **kwargs):
 
 - `route_type="receive"` 只参与入站注入；`"duplex"` 同时承担入站与出站。
 - 仅声明还不够：链路可用时必须调用 `ctx.gateway.update_state(..., ready=True)`，Host 才把它纳入实际路由。
+
+### 消息归属（入站消息的身份规则）
+
+网关用 `update_state(ready=True, platform=..., account_id=..., scope=...)` 声明自己接入的身份，
+入站消息的顶层字段必须与声明**完全一致**——Host 侧 `_build_inbound_route_key`
+（`host/supervisor.py`）把消息提取的 `RouteKey` 与网关声明逐字段比对，不相等直接
+`ValueError: 消息归属未由网关 xxx 声明`（连 platform 也不许消息改写）：
+
+- `message.platform` — 必填非空，缺失时构造路由键直接抛错
+- `message.account_id` — 处理这条消息的**机器人账号**（与发送者 `message_info.user_info.user_id`
+  是两回事：入站发送者是用户，出站发送者是机器人）；缺失或为空报「入站消息缺少明确的 account_id 归属」
+- `message.scope` — 可选；网关声明了作用域时消息必须填相同值
+- `message_info.additional_config` — 只放平台专属扩展（目标 OpenID、被动回复凭据），**不放账号/作用域**
+- `route_metadata` — 只是路由观测信息，不参与身份声明
+
+**身份发现只由网关就绪声明完成，入站消息不能新增机器人账号**（supervisor 源码注释原话）；
+一个插件接多个账号 = 声明多个网关，消息提交给匹配的那个。
+
+⚠️ **旧格式迁移**：旧消息的 `self_id` / `platform_io_account_id` / `bot_account` 等别名，以及
+`message_info` / `additional_config` / `route_metadata` 里的归属字段目前暂时兼容
+（`platform_io/route_key_factory.py` 旧路径，Host 打 WARNING），**下个版本移除**。
+一旦消息带顶层 `account_id` 键就走正式分支，空值/类型错误**不会**回退旧字段
+（非字符串直接抛错）。新适配器一律写顶层 `account_id` / `scope`。
 
 ---
 

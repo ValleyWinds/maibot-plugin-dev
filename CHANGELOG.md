@@ -19,6 +19,7 @@
 - README 与 SKILL.md 的插件目录结构对齐官方「目录结构约定」（`webui.json` / `i18n/` / `assets/`），补记偏差：官方推荐的 `i18n/` 资源目录当前在 Host 无运行时加载点（`locales_path` 仅被插件市场元数据透传），实际生效的插件多语言是配置 UI 的 `__ui_i18n__` 机制。
 - 收编官方 vibe-coding 页目录树里的 `tests/`（官方无内容说明、Host 不加载）：SKILL.md 目录结构加条目，plugin-testing.md 明确隔离导入 harness 放 `tests/` 配合 pytest 维护，并补上官方「测试建议」里的停用/卸载清理测试项。
 - 模板移除 `config.toml` 示例文件：它是首次运行由 Runner 自动生成的运行时产物（官方目录约定不列、官方要求 `.gitignore` 排除 `/config.toml`），模板自带的 `.gitignore` 也忽略它——保留示例反而诱导作者提交。生成结构见 `references/plugin-config.md` 的对应示例。
+- 补齐官方文档三个覆盖缺口（`hooks-and-components.md`，均与 SDK / Host 源码逐行核实）：**LLMProvider** 完整规范（Operation 三类请求/返回字段、`LLMProviderBase` 基类、卸载回退、排错）；**动态 API** 五方法与静态对比（register 后必须 `sync_dynamic_apis()` 才对 Host 生效、WebUI 页面只绑静态 API）；**网关消息归属**规则（顶层 `platform`/`account_id`/`scope` 须与网关声明逐字段一致，旧别名 `self_id` 等下版移除）。
 
 ## 2026-10-17：SDK 2.14.0 + MaiBot Host 1.3.9（基点 MaiBot `ac6ed61b` / SDK `e61ca95` / docs `32874ab`）
 
