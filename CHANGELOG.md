@@ -1,0 +1,27 @@
+# CHANGELOG
+
+本文件记录 maibot-plugin-dev 技能本身的校对基线变化（不是 MaiBot 或 SDK 的 changelog）。
+每次更新按「日期 + 校对基线」记一条：用户能感知的内容变化、新增/删除的文件、修正的错误。
+机器可读基线（三个仓库的基点 SHA 与 Hook/能力名清单）在 `maintenance/baseline.json`。
+
+## 2026-10-24：SDK 2.16.0 + MaiBot Host 1.3.15（基点 MaiBot `062d45cf` / SDK `835e0e9` / docs `5aa7365`）
+
+增量校对，11 个文件定点改写，新增 3 个文件：
+
+- **2.15.0**：新增第 19 个能力代理 `ctx.market`，只读查询插件市场：`search(query, *, category/page/limit/sort_by/compatible_only/include_manifest/include_stats/force_refresh)`、`get_detail(plugin_id)`、`get_readme(plugin_id, *, max_chars=8000/prefer_local/branch/force_refresh)`；三个能力需在 manifest `capabilities` 分别声明。
+- **2.16.0**：新增 `ctx.maisaka.reply.generate(stream_id, reference, *, format_instruction="", model_name="", timeout_ms=None)`，生成符合麦麦人格的长文、结果交由插件自行发送；`ctx.maisaka.context.append()` 新增 `replyable` / `user_info` 仅关键字参数，用于保留真实作者与消息编号。
+- Host 侧：能力注册表扩到 **80 个能力名**（新增 `market.search` / `market.get_detail` / `market.get_readme` / `maisaka.reply.generate`）；Hook 清单修正为 22 个——删掉了 3 个旧基线条目（`emoji.register.after_build_emotion`、`jargon.query.before_search`、`jargon.query.after_search`，当前源码全仓 grep 零命中，系上一版误收，文档中已改为「不存在、勿订阅」的警示行）；SDK 超出版本区间改为只 warning 放行，不再拒载。
+- 收录事实补记：插件中心**收录审核不接受 `999.999.999` 上界**（实测拦截），锁已实测次版本线的写法同时是收录硬门槛。
+- 新增 `references/plugin-testing.md`（插件测试流程：离线导入 → 本地实例 → 收录前自检）。
+- 新增 `assets/plugin-template/.gitignore`（`config.toml` 运行时自动生成勿上传、`.env` 与密钥防泄漏）。
+- `plugin-repo-submission.md` 新增「公开发布前安全检查」一节。
+- 变更摘要从 SKILL.md 迁出至本文件，SKILL.md 只保留校对基线行。
+
+## 2026-10-17：SDK 2.14.0 + MaiBot Host 1.3.9（基点 MaiBot `ac6ed61b` / SDK `e61ca95` / docs `32874ab`）
+
+全量重写基线：14 个文件逐行对照源码复核，约 65 条事实修正，确定性门禁 19/19 通过。
+
+- 确认 18 个能力代理、22→25 个 Hook 的规格（kwargs 逐字）、组件装饰器全集与废弃项。
+- WebUI v2 扩展协议（`webui.json`）整页按源码重写，替换掉描述不存在协议的旧内容。
+- 陷阱库重建：逐条复核旧陷阱在当前源码是否成立，新增事件类型发射点、配置重建等真实机制类陷阱。
+- 仓库补充 LICENSE（CC BY-SA 4.0）与 README。

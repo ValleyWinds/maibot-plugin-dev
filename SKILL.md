@@ -12,10 +12,7 @@ agent_created: true
 
 > **校对基线：SDK 2.16.0 + MaiBot Host 1.3.15**（2026-10-24 逐行对照源码复核；基点：MaiBot `062d45cf` / SDK `835e0e9` / docs `5aa7365`）
 > 机器可读基线（含三个仓库的基点 SHA 与 Hook/能力名清单）在 `maintenance/baseline.json`，技能更新工作流靠它做增量 recon。
-> 相对上一版的变更摘要（相对本文件上一版基线）：
-> - **2.15.0**：新增第 19 个能力代理 `ctx.market`，只读查询插件市场：`search(query, *, category/page/limit/sort_by/compatible_only/include_manifest/include_stats/force_refresh)`、`get_detail(plugin_id)`、`get_readme(plugin_id, *, max_chars=8000/prefer_local/branch/force_refresh)`；三个能力需在 manifest `capabilities` 分别声明。
-> - **2.16.0**：新增 `ctx.maisaka.reply.generate(stream_id, reference, *, format_instruction="", model_name="", timeout_ms=None)`，生成符合麦麦人格的长文、结果交由插件自行发送；`ctx.maisaka.context.append()` 新增 `replyable` / `user_info` 仅关键字参数，用于保留真实作者与消息编号。
-> - Host 侧：能力注册表扩到 **80 个能力名**（新增 `market.search` / `market.get_detail` / `market.get_readme` / `maisaka.reply.generate`）；Hook 清单少了 3 个旧基线条目（`emoji.register.after_build_emotion`、`jargon.query.before_search`、`jargon.query.after_search`，当前源码全仓 grep 零命中）；SDK 超出版本区间改为只 warning 放行，不再拒载。
+> 逐版本变更摘要见 `CHANGELOG.md`（技能自身的校对历史，不在本文件展开）。
 > 环境版本不同时，先核对 `maibot-plugin-sdk/pyproject.toml` 的 `version` 与主程序 `pyproject.toml`。
 
 ## 何时使用
@@ -206,6 +203,7 @@ class MyPlugin(MaiBotPlugin):
 - `references/reply-extensions.md` — `@ReplyExtension` 回复扩展：两阶段协议、消息组格式、失败语义、平台作用域
 - `references/webui-pages.md` — `webui.json` 声明式 WebUI 页面协议（当前版本的一等公民；内容抽查与 1.3.15 源码一致，文件自带更细的校对基线行）
 - `references/isolated-import-testing.md` — 脱离宿主导入 plugin.py 做纯函数验证的 stub harness 套路（review / 排障陌生插件时用）
+- `references/plugin-testing.md` — 插件测试流程：离线导入 → 本地实例热加载实测 → 收录前自检（第一次写插件从这里走）
 - `assets/plugin-template/` — 插件模板文件（plugin.py / config.py / _manifest.json / config.toml）
 
 ## 语言环境

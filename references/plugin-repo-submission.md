@@ -254,6 +254,7 @@ Host 侧基类是 `extra="forbid"`，任何未声明字段都会让校验失败�
 - [ ] `capabilities` 只声明实际需要的能力，无能力时写空数组
 - [ ] 未在真实 MaiBot 里验证过加载运行前，不要提 Issue（AI 审核次数有限）
 - [ ] 若含 `webui.json`，已在本地 MaiBot 重载插件并打开页面验证
+- [ ] **安全检查已过**（见 §9）：`.env`、密钥、本机路径、运行数据未进仓库
 
 本地自检命令（仓库根目录）：
 
@@ -261,3 +262,14 @@ Host 侧基类是 `extra="forbid"`，任何未声明字段都会让校验失败�
 git describe --tags --abbrev=0
 python -c "import json; print(json.load(open('_manifest.json'))['version'])"
 ```
+
+## 9. 公开发布前安全检查（防泄漏）
+
+push 到 GitHub 前逐条自查——收录审核发现敏感信息会直接拒绝；已经 push 出去的凭据即使删库也已被各处缓存，**视为已泄漏，立即作废并更换**：
+
+- **凭据与密钥**：`.env`、`*.key`、API key、token、密码——代码与配置里不得出现任何真实凭据，需要示例就用占位符。
+- **本机数据**：插件 `data/` 目录（聊天记录、生成文件）、`config_back/`、日志文件——进 `.gitignore`，不要 commit。
+- **自动生成的配置**：`config.toml` 由插件系统首次运行时生成，实机上改过的配置可能含 token/密码，不要上传（模板自带 `.gitignore` 已忽略）。
+- **路径与人身信息**：带用户名的盘符绝对路径（用户目录下那种）、真实邮箱、手机号——示例写相对路径或 `~`。
+- **提交前自查**：`git log -p | grep -iE "key|token|secret|password"` 无命中再 push；历史提交同样要查。
+- 插件模板目录（`assets/plugin-template/.gitignore`）自带覆盖以上各项的 `.gitignore`，以它为起点、不要删。
