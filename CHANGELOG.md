@@ -24,6 +24,7 @@
 - **plugin-testing.md 第 2 层（本地实例实测）六步在 1.3.15 实例全程实测走通**（模板插件当被测件）：放进 `plugins/` 即被扫描加载、配置表单渲染、WebUI 聊天室可直接 `/命令` 触发、启停开关就地翻转写 `[plugin].enabled`；修正一处文档失实——**EventHandler / HookHandler 的注册状态 WebUI 不展示**（详情页组件区只列 Tool / 旧版 Action / Command），Hook 订阅只能靠真实触发或日志验证。
 - **§4 重构为「README、Release Notes 与二次开发合规」四段**：新增 **§4.1 合规义务**（原作者 LICENSE 与署名必须保留、更换协议须守原协议规则、二次开发先向原作者提 issue/PR——主人拍板的硬规则）；个人风格条目全部降为"建议"并注明非收录门槛（官方硬要求仅 §1.1 一条）；新增 **§4.3 Release Notes 写法**（标题纯版本号 `v1.0.0`、主要功能/细节两部分、一功能一行按模块分、版本与依赖更新不写）；新增 **§4.4 开发文档与长期维护**（强烈建议建 `docs/` 放开发向文档——技能受众是 AI，开发文档直接决定协作效率；强烈建议维护 `CHANGELOG.md` 并让 manifest `changelog` 字段指向它）。plugin-repo 已拉本地 clone 常备复验。
 - **模板自带 `AGENTS.md`（给 AI 的仓库指令）**：任何 AI 以插件仓库为工作区时自动读取——开发/发布规矩与红线随仓库走、不依赖技能安装（技能仓库链接已内置，没装技能的 AI 可顺链读 references）；目录树、SKILL.md 索引、工作流清单同步。
+- **技能保鲜自检**：AI 发现目标环境 SDK / Host 版本高于基线时主动提醒「技能可能过时」，更新与否由用户决定（不强制）；README「时效性声明」补更新方式（重新克隆覆盖 / `git pull`，无法直连 GitHub 时走 gh-proxy 镜像）。
 
 ## 2026-10-17：SDK 2.14.0 + MaiBot Host 1.3.9（基点 MaiBot `ac6ed61b` / SDK `e61ca95` / docs `32874ab`）
 

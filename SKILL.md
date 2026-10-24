@@ -14,6 +14,7 @@ agent_created: true
 > 机器可读基线（含三个仓库的基点 SHA 与 Hook/能力名清单）在 `maintenance/baseline.json`，技能更新工作流靠它做增量 recon。
 > 逐版本变更摘要见 `CHANGELOG.md`（技能自身的校对历史，不在本文件展开）。
 > 环境版本不同时，先核对 `maibot-plugin-sdk/pyproject.toml` 的 `version` 与主程序 `pyproject.toml`。
+> **技能保鲜自检**：使用本技能时若发现目标环境的 SDK / MaiBot 版本**高于基线**（如 Host 已进入 1.4.x），先提醒用户「技能基线落后于当前环境，签名 / Hook 清单等事实可能已过时」——更新与否由用户决定，不做强制；用户决定前，行为疑问一律以源码为准。技能更新方式见仓库 README 的「时效性声明」。
 
 ## 何时使用
 

@@ -43,6 +43,18 @@ maibot-plugin-dev/
 3. 官方文档 https://docs.mai-mai.org （文档存在滞后与自相矛盾处，技能内已标注已知偏差）
 4. 本技能
 
+**技能过时后怎么更新**：拉取最新仓库，替换你当初安装它的位置——
+
+```bash
+git clone https://github.com/ValleyWinds/maibot-plugin-dev.git
+# 无法直连 GitHub 时可走镜像加速（只读）：
+git clone https://v6.gh-proxy.org/https://github.com/ValleyWinds/maibot-plugin-dev.git
+```
+
+ZCode 用户覆盖 `~/.zcode/skills/maibot-plugin-dev/` 即可；其他 AI 编程工具的用户把仓库放到你引用它的位置，或直接把 `references/` 下的纯 Markdown 作为上下文重新提供给会话。已经是 clone 的直接 `git pull`。
+
+AI 侧也内置了保鲜自检：发现目标环境的 SDK / Host 版本高于技能基线时，会主动提醒你可能过时（是否更新由你决定）。
+
 ## 致谢与配套仓库
 
 本技能的全部内容都构建在以下三个开源仓库之上，谨向 **Mai-with-u** 社区与各位贡献者致谢 🙏：
