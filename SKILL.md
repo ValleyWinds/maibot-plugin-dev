@@ -1,6 +1,6 @@
 ---
 name: maibot-plugin-dev
-description: MaiBot 插件开发技能。在开发、调试、重构 MaiBot Plugin SDK 2.16.x 插件时使用此技能。涵盖 SDK 能力代理签名（19 种，已逐行核对源码）、组件装饰器规范、Hook 系统与真实 Hook 清单、配置模型、常见陷阱（Command 返回值解包、llm.generate 的 system_prompt/task_name、send 返回值与 return_details、Hook kwargs 结构、extra_prompt 归属、SDK 能力领先 Host 实现等），以及插件模板。适用于 ZCode 环境。
+description: MaiBot 插件开发技能。在开发、调试、重构 MaiBot Plugin SDK 2.16.x 插件，测试插件（离线导入/本地实例/收录自检），准备发布（README、Release Notes、收录流程、二次开发合规），或编写插件开发文档（docs/、CHANGELOG）时使用此技能。涵盖 SDK 能力代理签名（19 种，已逐行核对源码）、组件装饰器规范、Hook 系统与真实 Hook 清单、配置模型、常见陷阱（Command 返回值解包、llm.generate 的 system_prompt/task_name、send 返回值与 return_details、Hook kwargs 结构、extra_prompt 归属、SDK 能力领先 Host 实现等），以及插件模板。适用于 ZCode 环境。
 agent_created: true
 ---
 
@@ -21,6 +21,9 @@ agent_created: true
 - 调试或重构现有 MaiBot 插件
 - 需要查阅 SDK 能力代理签名或组件规范
 - 遇到 Command/Hook/Tool/LLM 相关问题时排查陷阱
+- 测试插件（离线导入测试、本地实例实测、收录前自检）
+- 准备发布插件（README / Release Notes / 提交收录 / 二次开发合规）
+- 编写或维护插件的开发文档（docs/ / CHANGELOG）
 
 ## 官方文档
 
@@ -47,7 +50,8 @@ my-plugin/
 ├── webui.json           # 可选：声明式 WebUI 自定义页面
 ├── i18n/                # 可选：国际化资源（zh-CN.json / en-US.json；⚠️ 当前 Host 无运行时加载点，见偏差清单）
 ├── assets/              # 可选：静态资源
-└── tests/               # 可选：插件自己的测试（Host 不加载；模板已自带 conftest + SDK 注入点示例，复制即跑）
+├── tests/               # 可选：插件自己的测试（Host 不加载；模板已自带 conftest + SDK 注入点示例，复制即跑）
+└── docs/                # 强烈建议：开发向文档（贡献者与 AI 协作者看这里，README 归用户；模板自带骨架，理由与写法见 plugin-repo-submission §4.4）
 ```
 
 上树的都是**仓库内容**（进 git 的）。运行时 `config.toml` 例外：它由 Runner 首次加载时按 `config_model` 自动生成在插件目录下，**不是仓库内容**——官方文档明确要求插件仓库的 `.gitignore` 应包含 `/config.toml`，不要手工创建或上传它。
@@ -75,7 +79,7 @@ my-plugin/
 - `dependencies`：`{"type":"plugin", "id", "version_spec"}` 或 `{"type":"python_package", "name", "version_spec"}` 两种形态；不允许自依赖与重复依赖。
 - `llm_providers`：每项必填 `client_type`；manifest 声明与代码 `@LLMProvider` 注册必须**双向一致**，不一致直接注册失败；两个插件声明同一 `client_type` 时**双方都被阻止加载**。
 - `display.icon`：对象 `{type, value, fallback?, background?}`——`type` 取 `lucide`（value=图标名）/ `emoji`（单个表情或短文本）/ `local`（插件目录内相对路径，仅 `.png` `.jpg` `.jpeg` `.webp` `.svg`，禁 URL、绝对路径、`..`、符号链接）；`fallback` 为加载失败时的 lucide 图标名，`background` 为 `#RRGGBB` 背景色；只影响 WebUI 展示。
-- `changelog`（URL 或插件目录内 `.md` 相对路径）。
+- `changelog`（URL 或插件目录内 `.md` 相对路径）。建议指向仓库内 `CHANGELOG.md`（强烈建议维护，见 `references/plugin-repo-submission.md` §4.3–4.4）。
 - ⚠️ 基类是 `extra="forbid"`：任何未声明字段（`extensions`、`categories`、`keywords`、`repository_url` 等）都会让校验失败报「存在未声明字段」。
 
 版本区间最佳实践（详见 `references/common-pitfalls.md` 的陷阱 16）——**两个区间各锁各的线，不是一条上界通吃**：
@@ -210,7 +214,7 @@ class MyPlugin(MaiBotPlugin):
 - `references/webui-pages.md` — `webui.json` 声明式 WebUI 页面协议（当前版本的一等公民；内容抽查与 1.3.15 源码一致，文件自带更细的校对基线行）
 - `references/isolated-import-testing.md` — 脱离宿主导入 plugin.py 做纯函数验证的 stub harness 套路（review / 排障陌生插件时用）
 - `references/plugin-testing.md` — 插件测试流程：离线导入 → 本地实例热加载实测 → 收录前自检（第一次写插件从这里走）
-- `assets/plugin-template/` — 插件模板文件（plugin.py / config.py / _manifest.json / 防泄漏 .gitignore / tests/ 测试脚手架 / pyproject.toml pytest 配置）
+- `assets/plugin-template/` — 插件模板文件（plugin.py / config.py / _manifest.json / 防泄漏 .gitignore / tests/ 测试脚手架 / pyproject.toml pytest 配置 / docs/ 开发文档骨架 / CHANGELOG.md 起步文件）
 
 ## 语言环境
 
@@ -226,8 +230,9 @@ class MyPlugin(MaiBotPlugin):
 6. **添加组件** — Tool/Command/HookHandler/API/ReplyExtension
 7. **配置模型** — PluginConfigBase + Field + WebUI i18n
 8. **测试** — mock ctx 对象做单元测试，不依赖真实 Host
-9. **审查第三方插件 / 复现纯函数 bug** — 用 stub harness 单独导入 `plugin.py`，见 `references/isolated-import-testing.md`
-10. **热加载**：插件支持热加载，代码更新后在 WebUI「插件管理」重新加载即可，**一般无需重启 MaiBot**；写安装/调试指引时不要让用户重启。真实的例外：
+9. **写开发文档与 CHANGELOG** — `docs/` 给贡献者与 AI 协作者（模块职责 / 数据流 / 设计取舍），让接手的人不用通读源码；写法见 `references/plugin-repo-submission.md` §4.3–4.4
+10. **审查第三方插件 / 复现纯函数 bug** — 用 stub harness 单独导入 `plugin.py`，见 `references/isolated-import-testing.md`
+11. **热加载**：插件支持热加载，代码更新后在 WebUI「插件管理」重新加载即可，**一般无需重启 MaiBot**；写安装/调试指引时不要让用户重启。真实的例外：
     - `[debug] force_plugin_compatibility` 等少数开关需重启才生效
     - **`maibot_sdk` 自身或插件依赖的 Python 包发生变更时，WebUI 热重载不生效**：热重载链路是 `integration.py` 的
       `reload_plugins_globally` → Runner 进程的 `_reload_plugins_by_ids`（`runner_main.py`），只卸载插件并调用
