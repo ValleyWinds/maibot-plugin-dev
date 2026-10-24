@@ -6,7 +6,7 @@ description: MaiBot 插件发布与收录参考：plugin-repo 收录流程、Rel
 # 插件发布与收录（plugin-repo）
 
 > **校对基线：SDK 2.16.0 + MaiBot Host 1.3.15**（2026-10-24 逐行对照源码复核）
-> 收录规则来源：官方社区插件索引仓库 [Mai-with-u/plugin-repo](https://github.com/Mai-with-u/plugin-repo)（`README.md` / `CONTRIBUTING.md` / `VERSIONING.md`，2026-10-17 核对、2026-10-24 线上复验一致）
+> 收录规则来源：官方社区插件索引仓库 [Mai-with-u/plugin-repo](https://github.com/Mai-with-u/plugin-repo)（`README.md` / `CONTRIBUTING.md` / `VERSIONING.md`，2026-10-17 核对、2026-10-24 线上复验一致，本地已拉 clone 常备复验）
 > 与官方文档 `docs/zh/plugin/submission.md`；manifest 校验行为以 Host `src/plugin_runtime/runner/manifest_validator.py` 为准
 
 插件本体留在各自的公开 GitHub 仓库，plugin-repo 维护三份索引：
@@ -162,20 +162,41 @@ manifest 的 `version` 保持纯三段式；预发布语义只由 GitHub Release
 客户端推荐 `recommended_version` 时只取**兼容、未撤回、非预发布**中版本号最高者（数字比较，不看发布时间）；
 显式安装请求可以选择兼容的预发布版本。
 
-## 4. README 编写要求
+## 4. README、Release Notes 与二次开发合规
+
+> 官方对 README 的**硬要求**只有一条（§1.1）：建议含功能介绍、安装方式、配置说明、使用示例。写法部分全部是经验建议——不合不会导致收录被拒；但 §4.1 是**必须遵守**的合规义务。
+
+### 4.1 二次开发 / fork 的合规义务（必须遵守）
+
+- **原作者的 LICENSE 与署名必须保留**：fork 或基于他人插件开发时，原仓库的 `LICENSE` 文件、代码与文档里的版权声明和署名**一条都不能删**——开源协议是法律义务，不是礼节。
+- **更换开源协议必须遵守原协议的规则**：原插件用的是 copyleft 系协议（GPL / LGPL / CC BY-SA 等）时，衍生作品**必须以兼容协议继续开源发布**，不能擅自换成 MIT 之类的宽松协议来规避开源义务；即使原协议允许更换（如 MIT / BSD），版权与许可声明也必须保留。另外注意依赖侧：MaiBot 主程序是 GPL-3.0、插件 SDK 是 LGPL-3.0，给自己的插件选协议时要确认与它们的兼容性。
+- **二次开发 / 接手维护，务必先向原作者提 issue 或 PR**：把改动发布出去之前，到原仓库提 issue 说明情况或直接提 PR 回馈上游——这是对原作者的基本尊重，也让社区知道分叉的存在与缘由，避免出现无人知晓的平行版本。
+- fork 插件的 README 致谢节：上游仓库名可以只写仓库部分，但原作者署名和感谢必须保留。
+
+### 4.2 README 写法建议（经验之谈，非收录门槛）
 
 README 面向**用户**写，不面向开发者写（AI 生成 README 最常犯的错就是写成开发文档）：
 
-- **不写内部版本策略**：如「版本线接续上游避免混淆」这类只有维护者需要知道的信息。
-- **不写 `config_version` 字段说明**：这是 schema 版本号，用户不该动也不需要懂。
-- **不写 manifest 已承载的元信息**：分类、图标、能力声明、manifest 字段表——这些在 `_manifest.json` 里，
-  README 里重复一遍只会和 manifest 漂移。
-- **不写 SDK 安装步骤**：插件 SDK 由主程序自动提供给插件 Runner，用户装 SDK 毫无意义。
-  **安装指引的正确主路径是「WebUI 插件市场一键安装」**，手动克隆到 `plugins/` 只作备选。
-- 功能用用户视角描述（什么场景、有什么效果），**不要罗列 Tool / Command 组件名**。
-- 文中指向仓库内文件的 Markdown 相对链接（如 `[GPL-3.0-or-later](LICENSE)`）在部分查看器里会被屏蔽渲染成
-  `[blocked]`，关键信息（版本、协议）直接写纯文本，附件名用反引号。
-- fork 插件的致谢节：上游仓库名可只写仓库部分（如 `self_identity_plugin`），但原作者署名和感谢必须保留。
+- **不写 SDK 安装步骤**：插件 SDK 由主程序自动提供给插件 Runner，用户自己装 SDK 毫无意义。安装指引的主路径写「WebUI 插件市场一键安装」，手动克隆到 `plugins/` 只作备选。
+- **不写 manifest 已承载的元信息**：分类、图标、能力声明、manifest 字段表——这些在 `_manifest.json` 里，README 里重复一遍只会和 manifest 漂移。
+- 功能用用户视角描述（什么场景、有什么效果），不建议罗列 Tool / Command 组件名——用户关心能干什么，不关心组件叫什么。
+- 内部实现细节（`config_version` 这类 schema 字段、只有维护者需要知道的版本策略）不进 README，放开发文档（§4.4）。
+- 指向仓库内文件的 Markdown 相对链接（如 `[LICENSE](./LICENSE)`）在部分查看器里会被屏蔽渲染成 `[blocked]`，关键信息（版本号、协议名）直接写纯文本，文件名用反引号。
+
+### 4.3 Release Notes 写法建议（惯例建议，非收录门槛）
+
+Release Notes 只写**用户能感知的更新要点**，不抢 README 的活（简介 / 安装 / 配置归 README）：
+
+- **标题用纯版本号**：如 `v1.0.0`、`v2.1.3`——不带日期、不带别名后缀；Tag 与 manifest `version` 一致（§2.1），预发布用 GitHub 的 Prerelease 标记表达，不改版本号格式。
+- **分两部分**：主要功能（新增了什么能力）、细节（修复 + SDK / API 相关改动）——与 MaiBot 主程序官方 changelog 的结构一致。
+- **一个功能一行，按模块分组**；用户视角描述效果，不写内部实现表述（SDK 版本号、热重载机制、`config_version` 之类维护者信息一律不进）。
+- **版本号提升、项目依赖更新不用写**。
+
+### 4.4 开发文档与长期维护（强烈建议）
+
+- **强烈建议建 `docs/` 放开发向文档**（官方 vibe-coding 目录树有此目录、无内容规定）：README 给用户、`docs/` 给贡献者与 AI 协作者——本技能的使用者是 AI，开发向文档（架构说明、模块职责、数据流、设计取舍）能让任何接手的人或 AI 快速上手，这对协作开发的效率影响很大。两类内容别混在 README 里。
+- **强烈建议维护一份 `CHANGELOG.md`**（逐版本记录更新要点，§4.3 的口径），并让 manifest 的 `changelog` 字段指向它（仓库内 `.md` 相对路径或 URL 均可，WebUI 会展示）。
+- 二次开发 / 接手维护的合规义务见 §4.1。
 
 ## 5. 多版本安装机制与更新替换行为
 
