@@ -23,6 +23,7 @@
 - 吸收主要贡献者（SengokuCola）插件实战：**SDK 测试注入点** `set_plugin_config` / `_set_context(rpc_call=fake)`（官方文档未记载，实测通过）与 tests/ 工程化惯例进 `plugin-testing.md`；**模板自带可跑的测试脚手架**（`tests/conftest.py` 相对导入安全姿势 + 注入示例 + `pyproject.toml` pytest 配置，模板原样 pytest 2/2 通过）；`display.icon` 子字段规范；`locales_path` 空串校验；重依赖 worker 分层附录（标注"作者实践非 Host 机制"）。
 - **plugin-testing.md 第 2 层（本地实例实测）六步在 1.3.15 实例全程实测走通**（模板插件当被测件）：放进 `plugins/` 即被扫描加载、配置表单渲染、WebUI 聊天室可直接 `/命令` 触发、启停开关就地翻转写 `[plugin].enabled`；修正一处文档失实——**EventHandler / HookHandler 的注册状态 WebUI 不展示**（详情页组件区只列 Tool / 旧版 Action / Command），Hook 订阅只能靠真实触发或日志验证。
 - **§4 重构为「README、Release Notes 与二次开发合规」四段**：新增 **§4.1 合规义务**（原作者 LICENSE 与署名必须保留、更换协议须守原协议规则、二次开发先向原作者提 issue/PR——主人拍板的硬规则）；个人风格条目全部降为"建议"并注明非收录门槛（官方硬要求仅 §1.1 一条）；新增 **§4.3 Release Notes 写法**（标题纯版本号 `v1.0.0`、主要功能/细节两部分、一功能一行按模块分、版本与依赖更新不写）；新增 **§4.4 开发文档与长期维护**（强烈建议建 `docs/` 放开发向文档——技能受众是 AI，开发文档直接决定协作效率；强烈建议维护 `CHANGELOG.md` 并让 manifest `changelog` 字段指向它）。plugin-repo 已拉本地 clone 常备复验。
+- **模板自带 `AGENTS.md`（给 AI 的仓库指令）**：任何 AI 以插件仓库为工作区时自动读取——开发/发布规矩与红线随仓库走、不依赖技能安装（技能仓库链接已内置，没装技能的 AI 可顺链读 references）；目录树、SKILL.md 索引、工作流清单同步。
 
 ## 2026-10-17：SDK 2.14.0 + MaiBot Host 1.3.9（基点 MaiBot `ac6ed61b` / SDK `e61ca95` / docs `32874ab`）
 
