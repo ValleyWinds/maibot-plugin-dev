@@ -16,7 +16,57 @@
 
 这一层的价值：几秒钟抓住「签名写错、配置模型缺默认值、manifest 字段非法」这类最低级但最常见的错，不用等宿主启动。
 
-官方 vibe-coding 页的插件目录树里给插件留了 `tests/` 目录（没有规定内容）——Host 不会加载它，正好把这套 harness 放进去（如 `tests/test_plugin_contract.py`），配合 pytest 随仓库维护；它只属于你的开发仓库，发布时也是体现插件质量的加分项。
+### 用 SDK 现成注入点测业务逻辑（比 stub 更进一步）
+
+stub harness 把 SDK 整个替掉，适合验导入契约；测**业务逻辑**时可以用**真实 SDK、只假最外层通道**——`MaiBotPlugin` 上有两个现成注入点（SDK `plugin.py`，官方文档未记载，主要贡献者插件实战在用）：
+
+- `plugin.set_plugin_config(dict)` —— 注入配置、拿到强类型 `self.config`。**注入的 dict 必须带 `[plugin].config_version` 节**，且配置模型要声明 `plugin` 节（缺任一，默认配置生成阶段就抛 `PluginConfigVersionError`，与 `common-pitfalls.md` 陷阱 12 同源）；只带必需节时业务字段走模型默认值。
+- `plugin._set_context(PluginContext(plugin_id, rpc_call=fake))` —— 注入假 RPC 通道：SDK 的参数组包、返回归一化都是真的，只有到 Host 的最后一跳是假的，能断言到 wire 级参数。
+
+```python
+# tests/conftest.py —— 隔离加载 plugin.py（多文件插件另见 isolated-import-testing.md）
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
+import pytest
+
+@pytest.fixture(scope="session")
+def plugin_module():
+    spec = spec_from_file_location("my_plugin", Path(__file__).parents[1] / "plugin.py")
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+```
+
+```python
+# tests/test_logic.py —— 两个注入点合用（SDK 2.16.0 实测通过）
+import asyncio
+from maibot_sdk.context import PluginContext
+
+def test_config_injection(plugin_module):
+    plugin = plugin_module.create_plugin()
+    plugin.set_plugin_config({"plugin": {"config_version": "1.0.0"}, "api_key": "test-secret"})
+    assert plugin.config.api_key == "test-secret"
+
+def test_fake_rpc(plugin_module):
+    plugin = plugin_module.create_plugin()
+
+    async def fake_rpc(method, plugin_id, payload):
+        assert payload["capability"] == "send.text"
+        assert payload["args"]["text"] == "hi"     # wire 级断言（args 还会自动带 return_details: False）
+        return {"success": True}
+
+    plugin._set_context(PluginContext("demo.plugin", rpc_call=fake_rpc))
+    ok = asyncio.run(plugin.notify(stream_id="s1", text="hi"))
+    assert ok is True                              # send.text 按 success 归一化返回 bool
+```
+
+### tests/ 的工程化惯例（官方文档只有目录树一行，无内容说明）
+
+官方 vibe-coding 页给插件留了 `tests/` 目录——Host 不加载它，纯给开发者。实战惯例：
+
+- `tests/conftest.py` 放隔离加载 fixture（见上例）；`pyproject.toml` 配 `[tool.pytest.ini_options]`：`testpaths = ["tests"]`、`pythonpath = ["."]`；
+- 依赖双轨：`requirements.txt` 供本地开发/测试（**把 `maibot-plugin-sdk` 也列进去，pytest 才能 import 它**），运行环境安装走 manifest `dependencies`（Host 依赖管道装）；
+- 规模参照：小插件两个文件（conftest + 契约/逻辑测试）即可；中型插件按模块一个 test 文件；重工程（AI 推理类）再加 worker 生命周期、依赖下载、断点续传等专项。发布时 tests 随仓库分发，是插件质量的加分项。
 
 ## 第 2 层：本地实例实测
 

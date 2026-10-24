@@ -68,13 +68,14 @@ my-plugin/
 - `create_plugin()` 工厂函数
 
 `_manifest.json` 必填字段（缺任一都会注册失败）：
-`manifest_version`(只支持 2) / `id`（须匹配 `^[A-Za-z0-9_]+(?:[.-][A-Za-z0-9_]+)+$`，至少两段） / `version`（严格三段式 X.Y.Z） / `name` / `description` / `license` / `author{name,url}` / `urls.repository` / `host_application{min_version,max_version}` / `sdk{min_version,max_version}` / **`capabilities`**（数组，无默认值，缺失即 Pydantic missing；可为空数组，不允许空字符串项） / `i18n`（对象必填；其中仅 `default_locale` 必填，`locales_path` / `supported_locales` 可选——缺省为 None / 空列表，模板就只写这两键）。
+`manifest_version`(只支持 2) / `id`（须匹配 `^[A-Za-z0-9_]+(?:[.-][A-Za-z0-9_]+)+$`，至少两段） / `version`（严格三段式 X.Y.Z） / `name` / `description` / `license` / `author{name,url}` / `urls.repository` / `host_application{min_version,max_version}` / `sdk{min_version,max_version}` / **`capabilities`**（数组，无默认值，缺失即 Pydantic missing；可为空数组，不允许空字符串项） / `i18n`（对象必填；其中仅 `default_locale` 必填，`locales_path` / `supported_locales` 可选——缺省为 None / 空列表，但 `locales_path` 一旦给出就不能是空字符串；模板就只写这两键）。
 
 常用可选字段：
 - `plugin_type`：缺省 `"extension"`，接受别名 `type`；唯一有语义的特殊值是 `"adapter"`（决定归 builtin 还是 third_party Supervisor）。
 - `dependencies`：`{"type":"plugin", "id", "version_spec"}` 或 `{"type":"python_package", "name", "version_spec"}` 两种形态；不允许自依赖与重复依赖。
 - `llm_providers`：每项必填 `client_type`；manifest 声明与代码 `@LLMProvider` 注册必须**双向一致**，不一致直接注册失败；两个插件声明同一 `client_type` 时**双方都被阻止加载**。
-- `display.icon`（lucide / emoji / local）、`changelog`（URL 或插件目录内 `.md` 相对路径）。
+- `display.icon`：对象 `{type, value, fallback?, background?}`——`type` 取 `lucide`（value=图标名）/ `emoji`（单个表情或短文本）/ `local`（插件目录内相对路径，仅 `.png` `.jpg` `.jpeg` `.webp` `.svg`，禁 URL、绝对路径、`..`、符号链接）；`fallback` 为加载失败时的 lucide 图标名，`background` 为 `#RRGGBB` 背景色；只影响 WebUI 展示。
+- `changelog`（URL 或插件目录内 `.md` 相对路径）。
 - ⚠️ 基类是 `extra="forbid"`：任何未声明字段（`extensions`、`categories`、`keywords`、`repository_url` 等）都会让校验失败报「存在未声明字段」。
 
 版本区间最佳实践（详见 `references/common-pitfalls.md` 的陷阱 16）——**两个区间各锁各的线，不是一条上界通吃**：

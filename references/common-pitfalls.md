@@ -947,3 +947,14 @@ return {"action": "continue", "modified_kwargs": modified}
 
 **需要一次"清理式重建"时，应当上调版本号**（例如 `1.9.2 → 2.0.0`），
 一次性重建移除废弃字段，同时把版本线拉回自己手里。
+
+## 附录 5：重依赖 worker 分层（作者实战模式，非 Host 机制）
+
+⚠️ **Host 对此零支持**：依赖管道（`dependency_pipeline.py`）只安装 manifest `dependencies` 里声明的 `python_package`（uv 装），没有任何"子进程依赖"概念。以下是大型插件（AI 推理类，如 torch）的作者自建隔离模式，供重依赖插件参考：
+
+- **轻依赖**（插件进程要用）→ manifest `dependencies` 的 `python_package` 声明，Host 依赖管道安装；
+- **重依赖**（GB 级运行时）→ **不进 manifest**：插件把推理引擎放独立子进程（worker），依赖自己管理——`pyproject.toml` 声明 worker 包元数据（torch 等依赖表），wheel 由插件代码自行下载（实战样本按 Python 版本/平台/arch 拼 tag、sha256 校验、断点续传），Runner 进程保持干净；
+- worker 与插件进程间自定义 IPC（子进程的 stdlib 日志会经 Runner 日志桥自动转发）；
+- 配套测试：worker 生命周期、依赖下载、推理传输、断点续传各一个专项文件。
+
+收益：插件热重载不拖着重模型走、torch 崩溃不带走 Runner、依赖体积不进市场安装链路。代价：全部自管（下载源、平台兼容、进程看护），小型插件不要上这套。
