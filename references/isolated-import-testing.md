@@ -3,7 +3,7 @@ name: isolated-import-testing
 description: 如何脱离 MaiBot 宿主，单独导入插件 plugin.py 并对纯函数做可复现验证（stub harness 套路）
 ---
 
-> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-17 逐行对照源码复核）
+> **校对基线：SDK 2.16.0 + MaiBot Host 1.3.15**（2026-10-24 逐行对照源码复核）
 
 # 脱离宿主导入插件做纯函数验证
 
@@ -127,7 +127,7 @@ class ToolParameterInfo(dict):
     pass
 ```
 
-⚠️ stub 必须覆盖到被测插件实际 import 的符号，缺一个就落进 `except ImportError` 分支。SDK 2.14.0 的装饰器全集（`maibot_sdk/__init__.py` 的 `__all__`）：`Command` / `Tool` / `API` / `EventHandler` / `ReplyExtension` / `HookHandler` / `MessageGateway` / `HomeCard` / `LLMProvider` / `Action`（已废弃）/ `WorkflowStep`（已移除）；类型枚举在 `maibot_sdk/types.py`，`Field` 与 `PluginConfigBase` 在 `maibot_sdk/config.py`。
+⚠️ stub 必须覆盖到被测插件实际 import 的符号，缺一个就落进 `except ImportError` 分支。SDK 2.16.0 的装饰器全集（`maibot_sdk/__init__.py` 的 `__all__`）：`Command` / `Tool` / `API` / `EventHandler` / `ReplyExtension` / `HookHandler` / `MessageGateway` / `HomeCard` / `LLMProvider` / `Action`（已废弃，内部按 Tool 注册）/ `WorkflowStep`（已移除，调用直接 `RuntimeError`）；类型枚举在 `maibot_sdk/types.py`，`Field` 与 `PluginConfigBase` 在 `maibot_sdk/config.py`。
 
 3. 用 `importlib` 按路径加载，当作普通模块用：
 
@@ -158,8 +158,8 @@ mod._split_text_at_brackets("...")       # 直接调纯函数
 - **`pydantic` 不一定需要**。插件普遍写成 `try: from maibot_sdk import Field, HookHandler, PluginConfigBase / except ImportError:` 回退到 pydantic。
   只要 stub 里**同时提供** `Field` 和 `PluginConfigBase`，走的就是 stub 分支，无需安装 pydantic。
   反之若只提供一部分，就可能落进 `except` 分支去找 pydantic 而失败。
-- **插件目录内的相对导入会让裸 `spec_from_file_location` 直接失败**。插件模板（`plugin-template/plugin.py`）就是
-  `from .config import MyPluginConfig` 这种写法；不设 `submodule_search_locations` 且不给 `mod.__path__` 赋值，
+- **插件目录内的相对导入会让裸 `spec_from_file_location` 直接失败**。多文件插件普遍写成
+  `from .config import MyPluginConfig` 这种写法（如 `Maizone/plugin.py`、`Sleep-Manager/plugin.py`）；不设 `submodule_search_locations` 且不给 `mod.__path__` 赋值，
   `exec_module` 时抛 `ImportError: attempted relative import with no known parent package`。
   这不是插件 bug，是加载方式不对——照上面第 3 步写即可。
 - **注解在函数定义时求值**。`def f(self, task_config: TaskConfig)` 这种注解会在 `def` 执行时求值（没有 `from __future__ import annotations`），
@@ -208,7 +208,7 @@ plugin = mod.create_plugin()  # 直接实例化、直接断言
 
 ⚠️ `build_plugin_default_config` 与 `collect_components` 都不在包根导出，要分别从 `maibot_sdk.config` / `maibot_sdk.components` 导入（`from maibot_sdk import build_plugin_default_config` 会 ImportError）。另外 `collect_components(plugin)` **返回的是已经 `model_dump()` 过的 dict 列表**，直接 `.model_dump()` 会抛 `AttributeError: 'dict' object has no attribute 'model_dump'`。
 
-SDK 2.14.0 运行时真正需要的第三方依赖只有 `pydantic`（`maibot_sdk/config.py` / `types.py` / `messages.py` 等直接 import），PIL 视插件而定。`msgpack` 只是 `pyproject.toml` 的声明项，SDK 源码里没有任何一处 import 它，本地缺了也能跑通——真正使用 msgpack 的是 Host 侧 `src/plugin_runtime/protocol/codec.py` 的插件进程间 RPC 编解码，与这条独立导入验证路线无关（SDK 自带的 `docs/guide.md` 重复了「运行时依赖 pydantic + msgpack」的过时说法，勿被带偏）。用 uv 临时环境补齐即可，不污染系统 Python：
+SDK 2.16.0 运行时真正需要的第三方依赖只有 `pydantic`（`maibot_sdk/config.py` / `types.py` / `messages.py` 等直接 import），PIL 视插件而定。`msgpack` 只是 `pyproject.toml` 的声明项，SDK 源码里没有任何一处 import 它，本地缺了也能跑通——真正使用 msgpack 的是 Host 侧 `src/plugin_runtime/protocol/codec.py` 的插件进程间 RPC 编解码，与这条独立导入验证路线无关（SDK 自带的 `docs/guide.md` 重复了「运行时依赖 pydantic + msgpack」的过时说法，勿被带偏）。用 uv 临时环境补齐即可，不污染系统 Python：
 
 ```bash
 # msgpack 非必需，仅是声明项，多装无害
@@ -219,15 +219,15 @@ uv run --with pydantic --with msgpack --with pillow python verify.py
 
 | 断言 | 依据 |
 | --- | --- |
-| 生命周期三方法**被覆盖**（不只是签名对）：`on_load()` / `on_unload()` 0 参、`on_config_update` 3 参（`scope` / `config_data` / `version`） | `maibot_sdk/plugin.py` 的 `MaiBotPlugin.on_load` / `on_unload` / `on_config_update`；Host 侧 `plugin_loader.py` 的 `_validate_sdk_plugin_contract` 检查 `type(instance).on_load is MaiBotPlugin.on_load`，未覆盖直接 `TypeError` |
-| `create_plugin()` 可调用并返回 `MaiBotPlugin` 子类实例 | `_validate_sdk_plugin_contract` 的 `isinstance(instance, MaiBotPlugin)` |
+| 生命周期三方法**被覆盖**（不只是签名对）：`on_load()` / `on_unload()` 0 参、`on_config_update` 3 参（`scope` / `config_data` / `version`） | `maibot_sdk/plugin.py` 的 `MaiBotPlugin.on_load` / `on_unload` / `on_config_update`；Host 侧 `src/plugin_runtime/runner/plugin_loader.py` 的 `_validate_sdk_plugin_contract` 检查 `type(instance).on_load is MaiBotPlugin.on_load`，未覆盖直接 `TypeError` |
+| `create_plugin()` 可调用并返回 `MaiBotPlugin` 实例（`isinstance` 即通过，不要求是子类） | `src/plugin_runtime/runner/plugin_loader.py` 的 `create_plugin = getattr(module, "create_plugin", None)` 与 `_validate_sdk_plugin_contract` 的 `isinstance(instance, MaiBotPlugin)` |
 | `get_config_reload_subscriptions()` 可调用且不抛 | 同上，契约校验会调用它；`config_reload_subscriptions` 写成字符串会 `TypeError` |
 | 每个组件方法带 `__maibot_component_info__`，元数据含 `name`、`type`、`handler_name` | `maibot_sdk/components.py` 的 `collect_components` |
 | `build_plugin_default_config(config_model)` 成功（所有字段有默认值） | `maibot_sdk/config.py` 的 `build_plugin_default_config`，字段无默认值时抛 `ValueError` |
-| `config.toml` 可被 `tomllib` 解析并 `config_model.model_validate` 通过，含 `[plugin]` 节的 `config_version` | `maibot_sdk/config.py` 的 `extract_plugin_config_version`（缺失抛 `PluginConfigVersionError`）；Host 侧 `runner_main.py` 的 `_load_plugin_config` 用 `tomllib.load` |
+| `config.toml` 可被 `tomllib` 解析并 `config_model.model_validate` 通过，含 `[plugin]` 节的 `config_version` | `maibot_sdk/config.py` 的 `extract_plugin_config_version`（缺失抛 `PluginConfigVersionError`）；Host 侧 `src/plugin_runtime/runner/runner_main.py` 的 `_load_plugin_config` 用 `tomllib.load` |
 | manifest 必填字段齐全、无多余字段 | `src/plugin_runtime/runner/manifest_validator.py` 的 `PluginManifest`（基类 `_StrictManifestModel` 是 `extra="forbid"`，多一个字段就校验失败） |
 | `manifest_version` 为 `2`；`version` / 区间上下界都是严格三段式语义版本 | `PluginManifest.manifest_version`（`Literal[2]`）与 `VersionComparator.is_valid_semver` |
-| `sdk` 区间覆盖 2.14.0、`host_application` 区间覆盖 1.3.9 | `PluginManifest` 的 `ManifestVersionRange`（闭区间，`min_version > max_version` 直接失败） |
+| `sdk` 区间覆盖 2.16.0、`host_application` 区间覆盖 1.3.15 | `PluginManifest` 的 `ManifestVersionRange`（闭区间，`min_version > max_version` 直接失败） |
 | `author` / `urls.repository` 存在且是 http(s) URL | `ManifestAuthor` / `ManifestUrls` |
 | `capabilities` 字段存在（缺失即校验失败），无空字符串项、无重复项；其中每个能力都要能在 plugin.py 里找到对应 `ctx.*` 调用点 | `PluginManifest.capabilities`（`List[str]` 无默认值，缺失报 missing）；`_validate_capabilities` 只校验非空项与去重——**空数组合法**，无能力时写 `[]` |
 
@@ -253,12 +253,7 @@ uv run pytest pytests/plugin_runtime pytests/webui -q -p no:cacheprovider
 
 - uv 可能替 `.venv` 挑它自己管理的**新主版本**（实测装到 3.14），而生产实例常见 3.12/3.13。
   测试结果一般不受影响，但**别把 3.14 上的行为当生产行为**；要贴近生产就 `uv sync --frozen -p 3.12` 重建。
-- 实测基线（Host 1.3.9）：`pytests/plugin_runtime` **216/217 passed**，`pytests/webui` 插件相关四个文件 **64 passed**。
-- ⚠️ 那唯一的失败 `test_adapter_lifecycle.py::test_adapter_plugins_can_be_taken_offline_and_restored_exactly`
-  是**测试夹具问题，不是运行缺陷**，别去"修源码"：夹具 `_build_runtime_manager` 用
-  `object.__new__(PluginRuntimeManager)` 绕过 `__init__`，没设 `_status_listeners`，
-  而 `take_adapters_offline` 现在会经 `_notify_status_changed` 读它（`integration.py`，
-  引入该调用的是提交 `e24a8c9fb`）。生产路径永远走 `__init__`。
+  测试通过数随每次 `git pull` 变动，跑完以当次输出为准，别引用旧数字。
 
 ### 打真实端点（鉴权是 Cookie）
 
@@ -267,7 +262,7 @@ WebUI 的鉴权走 **Cookie `maibot_session`**，缺它一律 `401 未授权：�
 | 端点 | 能验什么 |
 | --- | --- |
 | `GET /api/webui/plugins/installed` | 插件的 `enabled` / `load_status`（`disabled` / `failed` / 正常） |
-| `GET /api/webui/plugins/runtime/hooks` | Host 真实 Hook 注册表——**数量与名字直接对表**（1.3.9 实测 22 个） |
+| `GET /api/webui/plugins/runtime/hooks` | Host 真实 Hook 注册表——**数量与名字直接对表** |
 | `GET /api/webui/plugins/runtime/commands` | `name` 原样返回（不带 `/`）、`aliases` 带 `/`、`permission`、`pattern` |
 | `GET /api/webui/plugins/runtime/webui` | `schema_version: 2` + 四项 `capabilities` + 各插件扩展 |
 | `GET /api/webui/plugins/runtime/home-cards` | 首页卡片注册结果 |

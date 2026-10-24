@@ -1,6 +1,6 @@
 # MaiBot 插件配置模型与 WebUI 配置渲染参考
 
-> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-17 逐行对照源码复核）
+> **校对基线：SDK 2.16.0 + MaiBot Host 1.3.15**（2026-10-24 逐行对照源码复核）
 
 插件配置是一条完整链路：`config.py` 的 Pydantic 模型 → Runner 归一化落盘 `config.toml` →
 Host 生成 WebUI Schema → dashboard 表单渲染与保存 → 配置变更热更新回插件。
@@ -38,7 +38,7 @@ class MyPlugin(MaiBotPlugin):
    对应 TOML 结构 `[infos_section]` / `[[infos_section.infos]]`。
 3. **`[plugin]` 节必须含 `config_version`**，且模型要有同名字段提供默认值（见第 4 节）。
 
-> Host 1.3.9 已对根级字段做了兼容（`config_routes.py` 的 `_fold_root_fields_into_virtual_general` 读取时折进
+> Host 自 1.3.8 起已对根级字段做了兼容（`config_routes.py` 的 `_fold_root_fields_into_virtual_general` 读取时折进
 > `general`、`_unfold_virtual_general_into_root` 保存时还原回根级），表单读写不再错位。但折叠只认「虚构节」：
 > `_get_virtual_general_field_names` 要求四重条件同时成立——Schema 含 `general` 节、默认配置没有真实
 > `general` 表、当前（归一化）配置也没有真实 `general` 表、且该节全部字段名都是默认配置的根级键。
@@ -384,7 +384,7 @@ WebUI Schema 里 `sections` 含两个键 `plugin` 与 `infos_section`（顺序�
 | 改字段名后用户配置没变 | 版本号没上调，未触发重建 | 上调 `config_version`（只升不降） |
 | 升级版本号后配置被重写了一次 | 版本号段数不一致（磁盘 `1.0`、默认 `1.0.0`）：判为升级触发**一次性**重建并落盘（重建后两边一致，不会每次重启都重写） | 统一三段式、段数一致 |
 | 改了默认版本号/结构但用户配置迟迟不迁移 | 反方向段数不一致（默认 `1.0`、磁盘 `1.0.0`）：`compare_versions` 判「无更新」→ **永不重建**，静默失效 | 默认版本号改成段数不少于磁盘侧的三段式并上调 |
-| 表单里某些字段不显示 | `hidden: True`（字段在模型根级不是原因：Host 1.3.9 会把根级字段折进 `general` 节正常显示，见第 1 节说明） | 检查 `json_schema_extra` |
+| 表单里某些字段不显示 | `hidden: True`（字段在模型根级不是原因：Host 自 1.3.8 起会把根级字段折进 `general` 节正常显示，见第 1 节说明） | 检查 `json_schema_extra` |
 | **整个配置页显示「未找到配置项」** | 两种原因长得一样：① 插件尚未被运行时注册，Schema 取不到；② 该节字段**全部** `hidden: True`（例如 `[plugin]` 节只有 `config_version`），被前端过滤后就是空白页 | 先用 `GET /api/webui/plugins/installed` 确认 `load_status`；确实已加载而仍空白，就是隐藏字段导致的正常现象，别误判成加载失败 |
 | 字段名是英文 | 没传 `label` | 逐字段补 `json_schema_extra={"label": "..."}` |
 | 表单里看不到某节描述 | 节类没写 docstring | 给配置类加一句话 docstring |

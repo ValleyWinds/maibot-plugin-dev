@@ -1,7 +1,7 @@
 # MaiBot 插件开发常见陷阱
 
 > 基于本地源码（MaiBot 主程序 + maibot-plugin-sdk）逐行核对，只收录「看起来能跑但静默失效」的坑
-> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-17 逐行对照源码复核）
+> **校对基线：SDK 2.16.0 + MaiBot Host 1.3.15**（2026-10-24 逐行对照源码复核）
 
 ---
 
@@ -199,10 +199,12 @@ Runner 侧 `runner_main.py` 的 `_handle_hook_invoke` 做同样的归一化。
 
 ### 陷阱 6：自建 data 目录存放运行时数据
 
-**现象**：插件在源码目录下自建 `data/` 子目录存放运行时数据，框架不认，热更新/迁移时数据丢失。
+**现象**：插件在源码目录下自建 `data/` 子目录存放运行时数据，插件升级/迁移（换目录重新部署）时数据不在统一持久化目录里，容易丢失。
 
 **根因**：SDK 早期版本没有目录属性，插件只能用 `os.path.dirname(os.path.abspath(__file__))` 自建目录。
 SDK 现在提供 `PluginPaths` dataclass（`data_dir` / `runtime_dir`），由 Runner 按插件 ID 分配。
+Host 侧对旧式 `<plugin>/data/` 目录只发 warning（`_warn_legacy_plugin_data_dir`），**不阻止加载**——
+所以自建目录不会让插件启动失败，是纯数据管理问题。
 
 **正确写法**：
 ```python
@@ -244,7 +246,7 @@ runtime_dir = str(self.ctx.paths.runtime_dir)
 > 能力名是逐项点号分层的（`send.text` / `llm.generate` 等），**没有 `send_message` 这种聚合名**。
 > 官方文档 `docs/zh/plugin/manifest.md` 的示例现已改为具体能力名（`send.text` / `send.emoji` / `config.get`）。
 
-**能力名以主程序源码为准**（`src/plugin_runtime/capabilities/registry.py`，当前 76 项）：
+**能力名以主程序源码为准**（`src/plugin_runtime/capabilities/registry.py`，当前 80 项）：
 - `send.text` / `send.emoji` / `send.image` / `send.forward` / `send.hybrid` / `send.command` / `send.custom`
 - `llm.generate` / `llm.generate_with_tools` / `llm.embed` / `llm.transcribe_audio` / `llm.get_available_models`
 - `config.get` / `config.get_plugin` / `config.get_all`
@@ -253,13 +255,14 @@ runtime_dir = str(self.ctx.paths.runtime_dir)
   `chat.open_session` / `chat.get_stream_by_group_id` / `chat.get_stream_by_user_id`
 - `message.get_by_time` / `message.get_by_time_in_chat` / `message.get_by_id` / `message.get_recent` /
   `message.count_new` / `message.build_readable`
-- `maisaka.context.append` / `maisaka.context.resolve_image` / `maisaka.proactive.trigger`
+- `maisaka.context.append` / `maisaka.context.resolve_image` / `maisaka.proactive.trigger` / `maisaka.reply.generate`
 - `person.get_id` / `person.get_value` / `person.get_id_by_name`
 - `emoji.get_random` / `emoji.get_by_description` / `emoji.register` / `emoji.delete` / `emoji.get_info` /
   `emoji.get_emotions` / `emoji.get_all` / `emoji.get_count`
 - `frequency.get_current_talk_value` / `frequency.set_adjust` / `frequency.get_adjust`
 - `component.*`（11 个）/ `api.call` / `api.get` / `api.list` / `api.replace_dynamic` /
   `knowledge.search` / `render.html2png` / `tool.get_definitions`
+- `market.search` / `market.get_detail` / `market.get_readme`
 - `statistics.local.*`（7 个方法，见 `references/sdk-api-reference.md`）
 - `webui.claim_upload`（唯一单独注册的 webui 能力，需 manifest 显式声明）
 
@@ -313,6 +316,9 @@ async def inject(self, **kwargs):
 - `ctx.maisaka.proactive.trigger(stream_id, intent, *, reason="", priority="", metadata=None, **kwargs)`
 - 便捷入口：`ctx.maisaka.trigger_proactive(stream_id, intent, **kwargs)`
 - 另有 `ctx.maisaka.append_context(stream_id, segments, **kwargs)` 与 `ctx.maisaka.context.append(...)`
+- 同文件还有 `ctx.maisaka.reply.generate(stream_id, reference, *, format_instruction="", model_name="", timeout_ms=None)`
+  （Host 能力名 `maisaka.reply.generate`）与 `ctx.maisaka.context.resolve_image(stream_id, source_id, index=0)`
+  （Host 能力名 `maisaka.context.resolve_image`）
 
 Host 侧注册的能力名是 `maisaka.proactive.trigger`（`capabilities/registry.py`）。
 
@@ -435,7 +441,7 @@ config_version = "1.0.0"
 - 都没传时落到默认任务 `utils`（`_DEFAULT_PLUGIN_LLM_TASK`）
 
 **关键事实**：
-- 常见任务名：`replyer`（回复模型）、`planner`（规划）、`utils`（小任务）、`memory`、`mid_memory`、`learner`、`vlm`、`fast_model`（表达方式选择、回复断句等轻量任务走它）等
+- 常见任务名：`replyer`（回复模型）、`planner`（规划）、`utils`（小任务）、`memory`、`learner`、`vlm`、`fast_model`（表达方式选择、回复断句等轻量任务走它）等
 - **任务集合 = `src/config/model_configs.py` 的 `ModelTaskConfig` 字段**，实际可用性取决于各环境 `config/model_config.toml` 的 `[model_task_config.*]` 配置
 - **没有 `reply` 这个任务名**！回复模型任务默认叫 `replyer`（各环境可能不同，取决于 model_config.toml）
 - `ctx.llm.get_available_models()` 返回可用任务名列表（`List[str]`），可在 `on_load` 校验配置、或做成命令给用户自查
@@ -482,10 +488,13 @@ await ctx.llm.generate(prompt="...", model="replyer")
 **现象**：写 `@EventHandler(EventType.ON_MESSAGE)` 想拦截入站消息，永远不被调用；`POST_LLM` / `ON_PLAN` /
 `AFTER_SEND` 等同样静默无响应。
 
-**根因**：SDK `EventType` 枚举 11 个值，但主程序 `EventBus.emit` 全仓只有 3 处调用：
+**根因**：SDK `EventType` 枚举共 11 个值（10 个业务值 + `UNKNOWN`），但主程序 `event_bus.emit` 全仓只有 3 处调用：
 - `ON_START`：`src/main.py`（startup 流程）
 - `ON_STOP`：`src/runtime.py`（关停流程）与 `src/webui/routers/system.py`（WebUI 重启前主动停插件运行时）
-- 其余 9 个值**无发射点**，只存在于 `core/types.py` 定义与 `plugin_runtime/integration.py` 的 `_EVENT_TYPE_MAP` 映射表
+- 其余 9 个值（含 `UNKNOWN`）**无发射点**；其中 8 个业务值是 `ON_MESSAGE_PRE_PROCESS` / `ON_MESSAGE` /
+  `ON_PLAN` / `POST_LLM` / `AFTER_LLM` / `POST_SEND_PRE_PROCESS` / `POST_SEND` / `AFTER_SEND`，
+  只存在于 `core/types.py` 定义、`core/event_bus.py` 的 `_bridge_to_ipc_runtime` 与
+  `plugin_runtime/integration.py` 的 `_EVENT_TYPE_MAP` 恒等映射
 
 尤其 **`ON_MESSAGE` 的分发被整段注释掉了**（`src/chat/message_receive/bot.py` `receive_message` 内三行注释代码）。
 入站消息实际由 Hook 承载：`chat.receive.before_process` / `chat.receive.after_process`。
@@ -507,15 +516,17 @@ await ctx.llm.generate(prompt="...", model="replyer")
 **根因**：`host_application.max_version` 落后于当前 Host 所在的次版本线（如还写着 `1.2.99`，Host 已升到 1.3.x）。
 版本区间校验规则（`manifest_validator.py` `_validate_runtime_compatibility`）：
 - Host **高于** `max_version` 但**主次版本相同**（仅补丁号超出）→ warning，插件照常加载（`is_same_major_minor_higher_version`）
-- Host 其余情况超出区间（如 1.2.x 插件遇 1.3.x）→ error，插件被阻止加载
-- SDK 超出区间 → **一律 error**，无容忍档
+- Host 其余情况超出区间（如 1.2.x 插件遇 1.3.x） → error，插件被阻止加载
+- SDK 超出区间 → **warning 放行**，不拒载（策略已统一为"警告放行"，不再是 error）
 
 **正确做法（两条线各锁各的线，别混用）**：
 - **`host_application`**：`max_version` 锁在**当前已实测通过的次版本线**（如 `1.3.99`），`min_version` 按真实依赖写。
   锁次版本线是安全的：Host 的同主次补丁级容忍规则（见上）保证 1.3.x 内的任意补丁升级**只 warning 不拦截**，
   所以 `1.3.99` 不会被日常升级挡住；而当 MaiBot 进入新小线（1.4/2.x）时插件会被挡下来——这正是设计意图：
   **"新版本能不能跑"用实际测试来回答，通过测试后抬界、发新版，而不是让版本号静默声明未验证的兼容**。
-- **`sdk`**：`max_version` 锁在当前主版本线内（如 `2.99.99`），**不要**写 `999.999.999`。依据：SDK 超出区间**一律 error、没有容忍档**（`_validate_runtime_compatibility` 对 SDK 没有任何豁免分支），而插件确实依赖 SDK 的接口形状——把上界放开等于声明支持根本不兼容的大版本，插件会被放进必炸的环境。
+- **`sdk`**：`max_version` 锁在当前主版本线内（如 `2.99.99`），**不要**写 `999.999.999`。当前 Host 对 SDK 超区间只 warning
+  不拒载（`_validate_runtime_compatibility` 的 SDK 分支统一为 warning），但插件确实依赖 SDK 的接口形状——把上界放开等于
+  声明支持根本没验证过的大版本，问题会推迟到运行时才炸；守住在 `2.99.99` 内便于在真实不兼容出现前主动抬界。
 
 两处官方来源**各自实际写的值不同**（本技能采纳后者的锁线思路，见上），不要笼统说"官方就是这么写的"：内置插件
 `src/plugins/built_in/plugin_management/_manifest.json` 写 `host_application: 1.0.0 ~ 999.999.999`、
@@ -556,12 +567,13 @@ Host 日志报 `未注册的能力: xxx`。
 - **主程序版本号相同 ≠ 源码没变**：Host 可能小步提交，以当时拉到的源码为准。
 
 **已实现 / 曾经落后的实例**（用于说明判定方法，具体以当时源码为准）：
-- `chat.get_avatar`：SDK 2.9.0 引入时 Host 尚未实现，当前 Host 1.3.9 已在
+- `chat.get_avatar`：早期 SDK 引入时 Host 尚未实现，当前 Host 已在
   `capabilities/registry.py` 注册（实现转调 `src.platform_io.avatar.avatar_service`）。
   **同类能力需现查**，不要照抄本文结论。
-- `webui.claim_upload`：SDK 2.11.0 新增，需 manifest 能力 `webui.claim_upload` 与宿主 `file_upload_v1`；
-  凭证一小时有效、一次性领取，文件字节不经 RPC。
-- `maisaka.context.resolve_image`：SDK 2.12.0 新增，需 manifest 能力 `maisaka.context.resolve_image`。
+- `webui.claim_upload`：已注册（`registry.py` 直接注册，实现在 `src/plugin_runtime/upload_store.py`），
+  需 manifest 能力 `webui.claim_upload`；WebUI 声明侧还需 `required_capabilities: ["image_upload"]`
+  （`webui_schema.py` 的三档开关之一）。凭证一小时有效、一次性领取，文件字节不经 RPC。
+- `maisaka.context.resolve_image`：已注册，需 manifest 能力 `maisaka.context.resolve_image`。
 
 **排查方法**：怀疑 SDK 方法 Host 不支持时，直接在主程序源码搜能力名字符串
 （如 `grep -rn "get_avatar" src/plugin_runtime/`）；零命中即 Host 未实现，只能等主程序更新或换实现路径。
@@ -685,10 +697,11 @@ abort 请求被忽略并记 error，**不报错、不中止**。同理 `allow_kw
 | `component.update_plugin_config` | 仅 `plugin_id == "builtin.plugin-management"`，否则恒返回「仅插件管理内置插件可以修改插件配置」 |
 | `component.unload_plugin` | 恒返回失败「新运行时不支持单独卸载插件，请使用 reload」 |
 | `component.enable` / `component.disable` | 仅支持全局：`scope != "global"` 或传了 `stream_id` 恒失败「当前仅支持全局组件启用/禁用」 |
-| `database.query` | 只支持 5 种 `query_type`：`get` / `create` / `update` / `delete` / `count`；`create` / `update` 缺 `data` 直接失败 |
+| `database.query` | 只支持 5 种 `query_type`：`get` / `create` / `update` / `delete` / `count`；未知类型报「不支持的 query_type: {x}」；`create` / `update` 缺 `data` 直接失败（文案分别为「create 需要 data」「update 需要 data」） |
+| `database.query`（`query_type="delete"`） | ⚠️ **没有任何 filters 检查**：delete 分支直接 `db_delete(filters=args.get("filters"))`，而 `db_delete` 在 filters 为空时**不生成 where 条件**，等于 `delete(model_class)` **全表删除**。无条件删除的保护只在独立的 `database.delete` 能力（缺 filters 报「缺少必要参数 filters（不允许无条件删除）」），走 `database.query` 的 delete 分支绕过了它——删表前务必自行校验 filters 非空 |
 | `api.call` | 只能调本插件或已公开的 API：未公开返回「API {name} 未公开，禁止跨插件调用」；API 名不唯一时要求显式指定 `version` |
-| `send.*` 七个方法 | 都要求 `stream_id` 非空（`send.command` 还要求 `command`，`send.custom` 要求 `message_type`），缺失返回「缺少必要参数 ...」并 `success=False` |
-| `llm.generate` / `generate_with_tools` | `model` 与 `model_name` 冲突抛错（陷阱 13）；`prompt` 只能是 `str` 或 `list[dict]`，空串/空列表/非 dict 元素都抛「缺少必要参数 prompt」 |
+| `send.*` 七个方法 | 都要求 `stream_id` 非空（`send.command` 还要求 `command`，`send.custom` 要求 `message_type`，`send.text` 要求 `text`、`send.emoji` 要求 `emoji_base64`、`send.image` 要求 `image_base64`、`send.hybrid` 要求 `segments`、`send.forward` 要求 `messages`），缺失返回「缺少必要参数 ...」并 `success=False` |
+| `llm.generate` / `generate_with_tools` | `model` 与 `model_name` 冲突抛错（陷阱 13）；`prompt` 只能是 `str` 或 `list[dict]`：空串与空列表/其它类型抛「缺少必要参数 prompt」，列表里的非 dict 元素抛「prompt 第 {index} 项必须为字典」 |
 | `llm.generate_with_tools` | `tools` / `tool_options` 必须是 `list`，否则返回「tools 必须为列表」 |
 
 **另一类注册期硬失败**（与"静默"互补，排查时别混淆）：
@@ -705,7 +718,7 @@ abort 请求被忽略并记 error，**不报错、不中止**。同理 `allow_kw
 
 遇到疑似 SDK 问题时，按以下顺序排查（**源码 > 官方文档**，文档有已知过时处）：
 
-1. **查 SDK 源码** — `maibot-plugin-sdk/maibot_sdk/`（当前 2.14.0）
+1. **查 SDK 源码** — `maibot-plugin-sdk/maibot_sdk/`（当前 2.16.0）
    - `components.py` — 装饰器签名（Command/Tool/API/HookHandler/EventHandler/HomeCard/ReplyExtension/Action）
    - `context.py` — `PluginContext`、能力代理挂载、`_BOOLEAN_SUCCESS_CAPABILITIES`、`PluginPaths`
    - `capabilities/*.py` — 各能力代理的方法签名（**文件名是 `database.py` 不是 `db.py`**）
@@ -733,7 +746,7 @@ abort 请求被忽略并记 error，**不报错、不中止**。同理 `allow_kw
 **已知出入小结（官方文档 vs 当前源码）**：
 - 命令返回值三元组第三位是 `intercept_message_level`，不是 `weight`
 - `EventHandler` 拦截语义是 `continue_processing=False`（或 `blocked=True`），不是 `intercepted`
-- `EventType` 11 个值只有 `ON_START` / `ON_STOP` 有发射点，`ON_MESSAGE` 分发已被注释
+- `EventType` 枚举 11 个值（10 个业务值 + `UNKNOWN`）只有 `ON_START` / `ON_STOP` 有发射点，其余 9 个（含 `UNKNOWN`）无发射点
 - WebUI 自定义页面是 `webui.json` 声明式协议（`schema_version: 2`），不是旧的 manifest 页面扩展协议（v2 之前）；
   写错 `schema_version` 会让整个插件注册失败
 - 能力名是逐项分层名（`send.text` / `llm.generate`），没有 `send_message` 这种聚合名
@@ -806,7 +819,9 @@ async def intercept_outbound(self, **kwargs):
 - `before_request` / `after_response`：**`allow_abort=False`**、`allow_kwargs_mutation=True` → 只能改写，不能中止。
 - **没有** `messages`、`response`、`tool_calls`、`extra_prompt`（`extra_prompt` 只在 `maisaka.replyer.before_request`，见陷阱 8）。
 - **`item_schema_version` 必须原样回带**：不等于 `CONTEXT_ITEM_SCHEMA_VERSION` 时
-  `src/plugin_runtime/hook_payloads.py` 直接抛错、整份 items 被丢弃（Host 打 warning「Hook ... 返回的 items 无效，已忽略」）。
+  `src/plugin_runtime/hook_payloads.py` 直接抛错、整份 items 被丢弃（Host 打 warning「Hook ... 返回的 items 无效，已忽略」）；
+  `items` 不是列表时报「Hook 返回的 `items` 必须是列表」，`after_response` 的对应文案是
+  「Hook ... 返回的 output_items 无法反序列化，已忽略」。
 
 ### 序列化 Context Item 的结构（`serialize_context_item_snapshot`，`src/llm_models/request_snapshot.py`）
 
@@ -867,10 +882,10 @@ return {"action": "continue", "modified_kwargs": modified}
 
 怎么判：从 Hook 载荷的 `tool_definitions` / `output_items` 里抽出工具名（function 结构的 `name` 字段），
 与"这一轮允许出现的工具集合"做子集比较，命中就退出。当前 Host 的内置工具全集见
-`src/maisaka/builtin_tool/__init__.py` 的 `BUILTIN_TOOL_ENTRIES`：`wait`、`reply`、
+`src/maisaka/builtin_tool/__init__.py` 的 `BUILTIN_TOOL_ENTRIES`（实测 14 项）：`wait`、`stop`、`reply`、
 `view_forward_message`、`query_memory`、`query_image_memory`、`query_person_profile`、`send_emoji`、
-`show_emoji_list`、`tool_search`、`subagent` / `subagent_status` / `subagent_stop`、`read_tool_result`、
-`fetch_history`、`switch_chat`（是否暴露还受 `global_config.experimental` / `emoji` 等开关与会话范围影响）。
+`show_emoji_list`、`tool_search`、`subagent`、`subagent_status`、`subagent_stop`、`read_tool_result`
+（是否暴露还受 `global_config.experimental` / `emoji` 等开关与会话范围影响）。
 
 > ⚠️ **不要凭传闻写死"控制工具名清单"**。`no_action` / `continue` 这类名字在当前 Host 源码里
 > **不是任何工具声明**：`grep -rn "no_action" MaiBot/src` 只命中 `mcp_module/manager.py` 的 MCP 保留名集合

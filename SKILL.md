@@ -1,6 +1,6 @@
 ---
 name: maibot-plugin-dev
-description: MaiBot 插件开发技能。在开发、调试、重构 MaiBot Plugin SDK 2.14.x 插件时使用此技能。涵盖 SDK 能力代理签名（18 种，已逐行核对源码）、组件装饰器规范、Hook 系统与真实 Hook 清单、配置模型、常见陷阱（Command 返回值解包、llm.generate 的 system_prompt/task_name、send 返回值与 return_details、Hook kwargs 结构、extra_prompt 归属、SDK 能力领先 Host 实现等），以及插件模板。适用于 ZCode 环境。
+description: MaiBot 插件开发技能。在开发、调试、重构 MaiBot Plugin SDK 2.16.x 插件时使用此技能。涵盖 SDK 能力代理签名（19 种，已逐行核对源码）、组件装饰器规范、Hook 系统与真实 Hook 清单、配置模型、常见陷阱（Command 返回值解包、llm.generate 的 system_prompt/task_name、send 返回值与 return_details、Hook kwargs 结构、extra_prompt 归属、SDK 能力领先 Host 实现等），以及插件模板。适用于 ZCode 环境。
 agent_created: true
 ---
 
@@ -10,14 +10,11 @@ agent_created: true
 
 本技能提供 MaiBot Plugin SDK 插件开发的核心知识与最佳实践，基于真实插件开发中踩过的坑提炼而成。涵盖 SDK 能力代理签名、组件装饰器、Hook 系统、配置模型、常见陷阱和插件模板。入口文件只放规范要点与陷阱索引，细节一律在 `references/` 下展开。
 
-> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-17 逐行对照源码复核）
-> 逐版本变更摘要（相对本文件上一版基线）：
-> - **2.10.0**：新增 `@ReplyExtension` 回复扩展装饰器与 `ComponentType.REPLY_EXTENSION`，模型侧 `reply` 工具多出 `plugin_options` 参数。
-> - **2.11.0**：新增第 18 个能力代理 `ctx.webui`，唯一方法 `claim_upload(upload_id)`。
-> - **2.12.0**：新增 `ctx.maisaka.context.resolve_image(stream_id, source_id, index=0)`。
-> - **2.13.0**：`@Tool` 新增仅关键字参数 `platforms`（平台作用域）。
-> - **2.14.0**：`@ReplyExtension` 同样新增 `platforms`，Tool 与 ReplyExtension 共用平台名校验；Host 按当前聊天平台过滤回复扩展。
-> - Host 侧：能力注册表扩到 **76 个能力名**；`chat.get_avatar` 已实现（不再触发「未注册的能力」）；旧的 manifest 页面扩展协议（v2 之前）已由 `webui.json` 声明式页面协议取代。
+> **校对基线：SDK 2.16.0 + MaiBot Host 1.3.15**（2026-10-24 逐行对照源码复核）
+> 相对上一版的变更摘要（相对本文件上一版基线）：
+> - **2.15.0**：新增第 19 个能力代理 `ctx.market`，只读查询插件市场：`search(query, *, category/page/limit/sort_by/compatible_only/include_manifest/include_stats/force_refresh)`、`get_detail(plugin_id)`、`get_readme(plugin_id, *, max_chars=8000/prefer_local/branch/force_refresh)`；三个能力需在 manifest `capabilities` 分别声明。
+> - **2.16.0**：新增 `ctx.maisaka.reply.generate(stream_id, reference, *, format_instruction="", model_name="", timeout_ms=None)`，生成符合麦麦人格的长文、结果交由插件自行发送；`ctx.maisaka.context.append()` 新增 `replyable` / `user_info` 仅关键字参数，用于保留真实作者与消息编号。
+> - Host 侧：能力注册表扩到 **80 个能力名**（新增 `market.search` / `market.get_detail` / `market.get_readme` / `maisaka.reply.generate`）；Hook 清单少了 3 个旧基线条目（`emoji.register.after_build_emotion`、`jargon.query.before_search`、`jargon.query.after_search`，当前源码全仓 grep 零命中）；SDK 超出版本区间改为只 warning 放行，不再拒载。
 > 环境版本不同时，先核对 `maibot-plugin-sdk/pyproject.toml` 的 `version` 与主程序 `pyproject.toml`。
 
 ## 何时使用
@@ -32,8 +29,8 @@ agent_created: true
 官方文档：https://docs.mai-mai.org/plugin/
 
 > ⚠️ **文档不等于真相**。当前已知偏差（均为逐行核对源码时确认）：
-> - **官方文档内部自相矛盾**：能力代理数量三处口径不一——官方文档 `index.md`（中英同错）与 SDK `README.md` / `docs/guide.md` 都写 17 种（漏 `ctx.webui`），只有 `api-reference.md` 写 18 种。装饰器数量同样矛盾：`index.md`（中英）写 9 种，SDK `docs/guide.md` 写 8 种并自称「对外推荐」、SDK `README.md` 写「7 种正式 + 1 种兼容」；而 `index.md` 的 9 种里其实含已废弃的 `@Action`。源码事实是 **18 个能力代理、9 个可用组件装饰器**（另有已废弃的 `Action` 与已移除的 `WorkflowStep`）。
-> - **SDK `docs/guide.md` 落后于版本**：其能力代理清单与装饰器清单未跟上 2.10.0 的 `ReplyExtension` 与 2.11.0 的 `ctx.webui`。
+> - **官方文档内部自相矛盾**：能力代理数量两处口径不一且都落后于源码——官方文档 `api-reference.md` 写 18 种、`docs/zh/plugin/index.md`（中英同错）写 17 种；SDK 仓库 `README.md` 也写 17 种。装饰器数量同样矛盾：`index.md`（中英）写 9 种，SDK `docs/guide.md` 写 8 种并自称「对外推荐」、SDK `README.md` 写「7 种正式 + 1 种兼容」；而 `index.md` 的 9 种里其实含已废弃的 `@Action`。源码事实是 **19 个能力代理、9 个可用组件装饰器**（另有已废弃的 `Action` 与已移除的 `WorkflowStep`）。
+> - **SDK `docs/guide.md` 的方法表格落后于源码签名**：其 `send` 方法表未列 `return_details`（仅在正文有示例）、`message.get_by_id` 表格行缺 `include_binary_data`、`component.enable` / `disable` 表格行缺 `version`。能力代理清单本身已跟上（`guide.md` 的能力代理一节逐字列出 19 个，含 `webui` 与 `market`），签名一律以源码为准。
 > - **官方文档写错返回值语义**：`commands.md` 说 Command 三元组第三项是「命令优先级权重，数值越高优先级越高」——实际是拦截等级 `intercept_message_level`，非 0 即拦截消息（`result[0]` 反而被 Host 忽略）。`event-handlers.md` 教返回 `{"intercepted": True}` 拦截消息，该 key 运行时根本不认识，拦截不会生效；且 `ON_MESSAGE` 在主程序里已无发射点。
 > - **遇到行为疑问，以 SDK / 主程序源码为准**，本技能已标注所有已知偏差。
 
@@ -80,7 +77,7 @@ my-plugin/
 版本区间最佳实践（详见 `references/common-pitfalls.md` 的陷阱 16）——**两个区间各锁各的线，不是一条上界通吃**：
 - `host_application`：上界**锁在当前已实测的次版本线**（如 `1.3.99`），`min_version` 按真实依赖写。Host 对超界但有相同主次版本的只给 warning 照常加载（`is_same_major_minor_higher_version`），所以 `1.3.99` 不会被 1.3.x 的补丁升级挡住；MaiBot 进入新小线（1.4/2.x）时插件会被挡——这是设计意图：**实测过再抬界发新版**，不静默声明未验证的兼容。
 - `sdk`：上界锁在当前主版本线内（如 `2.99.99`，内置插件 plugin_management 的 `_manifest.json` 即此写法），**不要写 `999.999.999`**。
-- 容忍规则只给 Host：`manifest_validator.py` 的 `_validate_runtime_compatibility` 中，Host 超上界但主次版本相同（`VersionComparator.is_same_major_minor_higher_version`）→ warning 照常加载；其余 Host 超范围 → 拒载。**SDK 超范围没有任何容忍分支，一律直接拒载**——这正是 sdk 上界不能拉满的原因。
+- 容忍规则：`manifest_validator.py` 的 `_validate_runtime_compatibility` 中，Host 超上界但主次版本相同（`VersionComparator.is_same_major_minor_higher_version`）→ warning 照常加载；其余 Host 超范围 → 拒载。**SDK 超范围自 Host 1.3.10 起也改为 warning 放行**（`SDK 版本超出插件声明范围，已放行: ...`），不再拒载；Runner 握手阶段的固定区间 `[1.0.0, 2.99.99]`（`protocol/envelope.py`）同样只 warning 不拒连。锁 2.99.99 仍是有意的刹车，只是失效形态从「加载不了」变成「警告后照跑」。
 - 排查用临时手段：`[debug] force_plugin_compatibility` 开关跳过版本校验（需重启，其他校验照旧）。
 - **发布 Release 时 Tag 必须与 manifest `version` 一致**，`id` 不能变，否则该版本被插件中心拒收。
 
@@ -100,12 +97,12 @@ my-plugin/
 | ~~`@Action`~~ | **已废弃**，调用即发 `DeprecationWarning`，内部转 `@Tool` 注册 | 新插件别用 |
 | ~~`@WorkflowStep`~~ | **已移除**，调用直接抛 `RuntimeError` | 改用 `@HookHandler` |
 
-### 3. ctx 能力代理（18 种）
+### 3. ctx 能力代理（19 种）
 
 通过 `self.ctx.*` 访问，所有调用通过 RPC 转发到 Host：
 
 `send` / `llm` / `config` / `db` / `message` / `person` / `emoji` / `frequency` / `component` /
-`chat` / `knowledge` / `tool` / `api` / `gateway` / `render` / `maisaka` / `statistics` / **`webui`**
+`chat` / `knowledge` / `tool` / `api` / `gateway` / `render` / `maisaka` / `statistics` / `webui` / **`market`**
 
 另有非能力代理对象：`ctx.paths`（`data_dir` / `runtime_dir`，SDK 2.6.0+）、`ctx.logger`（stdlib Logger）。
 
@@ -180,7 +177,7 @@ class MyPlugin(MaiBotPlugin):
 
 1. **Command 必须返回三元组** `(success, response, intercept_message_level)`：`intercept` 非 0 才拦截消息（任意 truthy 都算），**`result[0]` 被 Host 彻底忽略**；返回单字符串/2 元组会掉进 else 分支且 intercept 恒为 0。Command 必须自己调 `ctx.send.text()` 发送回复。
 2. **llm.generate 的 system_prompt 被 Host 忽略**：SDK 签名里没有该参数，会被 `**kwargs` 吞掉；system prompt 走消息列表 `[{"role":"system",...}]`，指定任务/模型用 `task_name=` / `model_name=`。
-3. **send.* 返回 bool**（不是 dict）：7 个 `send.*` 方法全在 `_BOOLEAN_SUCCESS_CAPABILITIES` 中；需要平台消息 ID 时传 `return_details=True` 得 `{"success","sent","message_id"}`。
+3. **send.* 返回 bool**（不是 dict）：7 个 `send.*` 方法全在 `_BOOLEAN_SUCCESS_CAPABILITIES` 中；需要平台消息 ID 时传 `return_details=True` 得 `{"sent": bool, "message_id": str | None}`——归一化结果**只有这两个键**（`success` 仅是 `sent` 缺省时的回落来源，不出现在返回值里，别写 `result["success"]`）。
 4. **Hook kwargs 是嵌套结构**：`chat.receive.before_process` 的 kwargs 只有 `message`（SessionMessage 序列化字典）和 `hook_name`（Host 统一注入），user_id 嵌套在 `message_info.user_info.user_id`，不要从顶层取。⚠️ **`hook_name` 出现在每一个命名 Hook 的 kwargs 里**（`hook_dispatcher.py` 组装 `{"hook_name": ..., **kwargs}`，运行实例实测 chat/send/replyer 三条链皆有），references 里的 kwargs 清单按 HookSpec 声明列键、不逐一标注它。
 5. **`maisaka.planner.*` 两个 Hook 只认 `items` / `output_items`**：写 `messages` / `response` 不报错但被忽略，插件「能加载但功能静默失效」；回带时 `item_schema_version` 必须原样不动。
 
@@ -196,17 +193,17 @@ class MyPlugin(MaiBotPlugin):
 
 11. **proactive.trigger 调用方式**：`await ctx.maisaka.proactive.trigger(stream_id, intent, reason="")` 或快捷方法 `ctx.maisaka.trigger_proactive(...)`。
 12. **config.get 读取主程序配置**：`await ctx.config.get("personality.personality", "")`，异步，key 支持点分割路径。
-13. **manifest 版本上界分两条线；Release Tag = manifest version**：`host_application` 上界锁在当前已实测的次版本线（如 `1.3.99`，Host 同主次版本更高补丁仅 warning、不会误挡 1.3.x 升级；MaiBot 出新小线后实测抬界再发版）、`sdk` 上界锁在当前主版本线内（如 `2.99.99`）——SDK 超范围无容忍分支、一律拒载；Tag 与 version 不一致 / id 变动 → Release 被插件中心拒收。
-14. **SDK 新能力可能领先 Host 实现**：`chat.get_avatar` 现已由 Host 实现（1.3.9 注册表在册），但机理仍成立——SDK 与 Host 独立发版，能力名不在注册表时调用才失败；怀疑时 grep 主程序 `src/plugin_runtime/` 确认。
+13. **manifest 版本上界分两条线；Release Tag = manifest version**：`host_application` 上界锁在当前已实测的次版本线（如 `1.3.99`，Host 同主次版本更高补丁仅 warning、不会误挡 1.3.x 升级；MaiBot 出新小线后实测抬界再发版）、`sdk` 上界锁在当前主版本线内（如 `2.99.99`）——SDK 超范围现为 warning 放行不拒载，锁线目的仍是刹车；Tag 与 version 不一致 / id 变动 → Release 被插件中心拒收。
+14. **SDK 新能力可能领先 Host 实现**：`chat.get_avatar` 现已由 Host 实现（1.3.15 注册表在册），但机理仍成立——SDK 与 Host 独立发版，能力名不在注册表时调用才失败；怀疑时 grep 主程序 `src/plugin_runtime/capabilities/registry.py` 确认。
 15. **Host 侧硬限制**：`component.update_plugin_config` 仅内置插件管理可用、`component.unload_plugin` 恒失败（改用 reload）、`component.enable/disable` 仅支持全局 scope、`database.query` 只支持 5 种 query_type、`api.call` 禁跨插件调未公开 API、未注册的 Hook 名会让组件注册直接失败。
 
 ## 参考文件
 
-- `references/sdk-api-reference.md` — **18 种能力代理 + paths/logger 的完整方法签名（逐行核对 SDK 2.14.0）**
+- `references/sdk-api-reference.md` — **19 种能力代理 + paths/logger 的完整方法签名（逐行核对 SDK 2.16.0）**
 - `references/common-pitfalls.md` — 常见陷阱的详解和修复方案；另附附录：planner items/output_items 协议、`@Command` 的 aliases 匹配语义、删除配置字段与 config_version 重建语义、插件发布与收录规则
 - `references/hooks-and-components.md` — Hook 系统清单（22 个 Hook 的真实 kwargs）+ 全部组件装饰器
 - `references/reply-extensions.md` — `@ReplyExtension` 回复扩展：两阶段协议、消息组格式、失败语义、平台作用域
-- `references/webui-pages.md` — `webui.json` 声明式 WebUI 页面协议（当前版本的一等公民，已按 Host 1.3.9 重写）
+- `references/webui-pages.md` — `webui.json` 声明式 WebUI 页面协议（当前版本的一等公民，已按 Host 1.3.15 重写）
 - `references/isolated-import-testing.md` — 脱离宿主导入 plugin.py 做纯函数验证的 stub harness 套路（review / 排障陌生插件时用）
 - `assets/plugin-template/` — 插件模板文件（plugin.py / config.py / _manifest.json / config.toml）
 

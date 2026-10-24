@@ -5,7 +5,7 @@ description: MaiBot 插件发布与收录参考：plugin-repo 收录流程、Rel
 
 # 插件发布与收录（plugin-repo）
 
-> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-17 逐行对照源码复核）
+> **校对基线：SDK 2.16.0 + MaiBot Host 1.3.15**（2026-10-24 逐行对照源码复核）
 > 收录规则来源：官方社区插件索引仓库 [Mai-with-u/plugin-repo](https://github.com/Mai-with-u/plugin-repo)（`README.md` / `CONTRIBUTING.md` / `VERSIONING.md`，2026-10-17 核对）
 > 与官方文档 `docs/zh/plugin/submission.md`；manifest 校验行为以 Host `src/plugin_runtime/runner/manifest_validator.py` 为准
 
@@ -15,7 +15,7 @@ description: MaiBot 插件发布与收录参考：plugin-repo 收录流程、Rel
 |----------|----------|------|
 | `plugins.json` | 人工登记 | 插件身份与公开仓库地址的核心登记表 |
 | `plugin_versions.json` | 同步工作流生成 | 逐版本索引（`schema_version: 1`），供客户端选兼容版本、固定 commit 安装与锁定更新（Release 安装的依据） |
-| `plugin_details.json` | 同步工作流生成 | 各插件默认分支的**当前 manifest 与展示资源**，是**分支安装**的依据；WebUI 插件市场列表经 `catalog.py` 的 fetch-raw 接口读取它，Host 升级后的兼容性提醒（`update_compatibility_notice.py` 的 `_fetch_marketplace_plugins`）也用它当「插件市场清单」 |
+| `plugin_details.json` | 同步工作流生成 | 各插件默认分支的**当前 manifest 与展示资源**，是**分支安装**的依据；仅在信息源切到 `cnb` / `github` 时由 Host 读取（`sources.py` 的 `fetch_information_file` → `GitSource.raw_url`），默认 `official` 源的市场列表走 `request_market("plugins/summary")`；Host 升级后的兼容性提醒（`update_compatibility_notice.py` 的 `_fetch_marketplace_plugins` → `service.py` 的 `get_catalog`）同样经此链路取「插件市场清单」 |
 
 插件展示页：https://plugins.maibot.chat/ 。提交完全免费、无需邀请。
 
@@ -117,10 +117,15 @@ description: MaiBot 插件发布与收录参考：plugin-repo 收录流程、Rel
     Host 侧有「同主次版本更高版本仅 warning」的容忍规则（见 §3.2），锁 `1.3.99` 不会被 1.3.x 内的补丁升级误挡；
     MaiBot 进入新小线（1.4/2.x）时插件被挡是**有意的刹车**——实测新 Host 兼容后抬界、发新 Release。
   - `sdk` 区间锁在 2.x 线：`min_version` 按实际依赖的 SDK 写、**上界按 `2.99.99`**。
-    官方内置插件 `src/plugins/built_in/plugin_management/_manifest.json` 实测即 `sdk.min_version: 2.0.0` /
-    `sdk.max_version: 2.99.99`（上游 `CONTRIBUTING.md` 示例同为 `2.99.99`），其 `host_application.min_version`
-    是 `1.0.0` 而非 `0.0.0`。原因：SDK 超区间**一律 error 拒载、没有容忍档**（见 §3.2），
-    SDK 与 Host 独立发版、大版本换代意味着破坏性变更，上界必须锁在当前主版本线内。
+    官方模板插件 `plugins/hello_world_plugin/_manifest.json` 实测即 `sdk.min_version: 2.0.0` /
+    `sdk.max_version: 2.99.99`（其 `host_application` 为 `1.3.0` ~ `1.3.99`）。
+    ⚠️ 注意 `sdk` 区间在 1.3.15 **不构成任何技术拦截点**：加载侧超区间只记 warning 不拒载，
+    插件市场与版本下拉的兼容性判定（`releases.py` 的 `manifest_compatibility`）也只读 `ManifestValidator.errors`，
+    SDK 超区间落在 warnings 里、同样算「兼容」；安装 / 更新 / Runner 连接都不看它。
+    真正会硬拦 Runner 的是握手固定区间 `[1.0.0, 2.99.99]`（`envelope.py` 的 `MIN_SDK_VERSION` / `MAX_SDK_VERSION`），
+    它与 manifest 声明的 `sdk` 区间是两道独立检查。
+    因此 SDK 侧锁线只是**元数据层面的自我约束**（写清「我只在 2.x 上验证过」），不要指望它挡住不兼容的 SDK；
+    实际是否兼容由运行期表现决定。
 - **上界维护义务**：锁次版本线意味着每次 MaiBot 出新小线都要**主动过一遍兼容性并抬界**，
   忘记抬界的代价是用户升级 Host 后插件被挡（日志 `Host 版本不兼容`）；这比放任上界静默声明未验证的兼容，
   是更负责任的默认。发布新 Host 兼容版时记得 Tag 与 manifest `version` 一致。
@@ -131,10 +136,15 @@ description: MaiBot 插件发布与收录参考：plugin-repo 收录流程、Rel
 
 - Host **高于** `max_version` 但**主次版本相同**（仅补丁号超出）→ warning，照常加载（`is_same_major_minor_higher_version`）。
 - Host 其余情况超区间 → error，阻止加载。
-- SDK 超区间 → **一律 error**，无容忍档。
+- SDK 超区间 → **warning 放行**，不拒载（`_validate_runtime_compatibility` 记 warning 后继续；
+  同一策略也体现在 Runner 握手：SDK 版本超出 `MIN_SDK_VERSION`–`MAX_SDK_VERSION`（`1.0.0`–`2.99.99`）
+  只 warning 不拒连）。即：SDK 区间只警告、不拦截，不要指望它挡住不兼容的 SDK。
 
 > 排查用临时手段：`[debug] force_plugin_compatibility`（WebUI 调试配置里也有开关）跳过区间校验，超范围只 warning 不拒载；
-> 需重启生效，只跳版本区间，能力白名单、依赖解析、`llm_providers` 一致性等校验照旧。别长期开。
+> 需重启生效，只跳版本区间，`manifest_version`、握手固定 SDK 区间、能力白名单、依赖解析、`llm_providers` 一致性等校验照旧。别长期开。
+> 该开关经环境变量 `MAIBOT_FORCE_PLUGIN_COMPATIBILITY` 传给插件 Runner（开启值为 `1`）。
+> ⚠️ 它**不影响插件市场**：版本索引的兼容性判断不读这个开关，市场与版本下拉里显示的「不兼容」仍按 manifest 声明计算——
+> 开关能救的是「加载被挡」，消不掉市场里的不兼容标记。
 
 ### 3.3 预发布怎么标
 
@@ -178,14 +188,18 @@ README 面向**用户**写，不面向开发者写（AI 生成 README 最常犯�
   装的是 `plugin_details.json` 登记的默认分支当前版本（索引 `mode: "branch"` 的插件只支持这条路径，
   指定版本号会被 `resolve_release` 拒绝：「该插件尚未发布 Release，只支持分支安装」）。
 - **已通过 Release 安装的插件不能再走分支拉取更新**（安装记录在插件目录 `.maibot-release.json`，
-  上游口径含实际版本、commit、仓库与锁定状态）。
+  上游口径含实际版本、commit、仓库与锁定状态；1.3.15 实测的 `receipt_data` 字段见下条）。
 - **`pinned` 锁定**（⚠️ 以下均为上游 `VERSIONING.md` 与官方 `plugin-lifecycle-api.md` 的口径，
-  **Host 1.3.9 本地源码副本尚未实现**，不要拿它排查 1.3.9 的实际行为）：锁定版本不会被自动更新覆盖，
-  也不会被降级或重装同版本；手动选择版本可在安装后改变锁定状态。
-  源码实证缺口：`schemas.py` 的 `InstallPluginRequest` / `UpdatePluginRequest` 均无 `pinned` 参数；
+  **Host 1.3.15 本地源码副本尚未实现**，不要拿它排查 1.3.15 的实际行为）：官方 API 文档只写
+  「`pinned` 是否锁定所选发布版本，默认 `false`；锁定后自动更新会拒绝更新该插件」，
+  未提「阻止降级」或「阻止重装同版本」——这两件事在 1.3.15 源码里也不是 pinned 的效果，
+  而是 `automatic` 分支的行为：`release_install.py` 的降级 / 重装拒绝判据是
+  `if automatic and old_version and Version(release.version) <= Version(old_version`，而 `automatic` 由
+  `management.py` 的 `request.version == "latest"` 决定，与 pinned 无关。因此不要以为 pinned 本身能挡住降级。
+  源码实证缺口（1.3.15 复核）：`schemas.py` 的 `InstallPluginRequest` / `UpdatePluginRequest` 均无 `pinned` 参数
+  （只有 `plugin_id` / `repository_url` / `branch` / `mirror_id` / `version`）；
   `release_install.py` 的 `replace_files` 写入的 `receipt_data` 只有 `plugin_id` / `version` / `tag` /
-  `commit` / `repository_url` 五个字段、无锁定状态；全 `src/` 无 pinned 判断，
-  `_install_release` 里唯一的自动更新拒绝是降级检查（目标版本 ≤ 当前版本时拒绝）。
+  `commit` / `repository_url` 五个字段、无锁定状态；`release_install.py` 全文无 pinned 判断。
 - **更新替换流程**：客户端克隆指定 Tag 到临时目录 → 对候选目录跑安装校验 → 停插件 → 保留用户文件
   （`_preserve_user_files`：固定保留 `config.toml` / `config_back` / `data`，且对 Git 插件**还会把未跟踪与被忽略的文件一并复制进新版本**
   ——`git ls-files --others` 枚举，跳过 `.venv` / `venv` / `__pycache__` / `.pytest_cache` 等运行缓存与虚拟环境；

@@ -1,6 +1,6 @@
 """插件入口模板。
 
-> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-15 逐行对照源码复核）
+> **校对基线：SDK 2.16.0 + MaiBot Host 1.3.15**（2026-10-24 逐行对照源码复核）
 
 包含：
 - 生命周期方法（on_load/on_unload/on_config_update，三者均为加载契约必需）
@@ -47,7 +47,13 @@ class MyPlugin(MaiBotPlugin):
     async def on_config_update(self, scope: str, config_data: dict, version: str) -> None:
         """配置热重载。scope 为 self/bot/model。
 
-        scope="bot" 时主程序配置变了（如人格），此时 self.config 已自动更新。
+        注意：
+        - scope="self" 表示插件自己的 config.toml 变了，Runner 在调用本方法前
+          已完成归一化与 model 校验并把新配置注入 self.config，此时可以直接读；
+        - scope="bot" / scope="model" 是主程序全局配置广播（需在
+          config_reload_subscriptions 中声明才会收到），此时 self.config
+          仍是旧值——它只反映插件自身配置，bot/model 的新值要从 config_data 取；
+        - 配置更新不会重启插件。
         """
         self.ctx.logger.info(f"配置更新: scope={scope}, version={version}")
 

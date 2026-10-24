@@ -1,6 +1,6 @@
 # MaiBot Plugin SDK 能力代理 API 速查
 
-> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-17 逐行对照源码复核）
+> **校对基线：SDK 2.16.0 + MaiBot Host 1.3.15**（2026-10-24 逐行对照源码复核）
 > 源码位置：`maibot-plugin-sdk/maibot_sdk/capabilities/*.py`、`maibot_sdk/context.py`
 > 文档：https://docs.mai-mai.org/plugin/api-reference
 
@@ -9,7 +9,7 @@
 
 ---
 
-## 能力代理总览（18 个 + paths + logger）
+## 能力代理总览（19 个 + paths + logger）
 
 | 代理 | 类 | 说明 | 引入版本 |
 |------|-----|------|----------|
@@ -31,6 +31,7 @@
 | `ctx.maisaka` | MaisakaCapability | 上下文注入与主动任务 | 2.5.0 |
 | `ctx.statistics` | StatisticsCapability | 本机统计（`ctx.statistics.local.*`） | 2.6.0 |
 | `ctx.webui` | WebUICapability | WebUI 上传凭证领取 | 2.11.0 |
+| `ctx.market` | MarketCapability | 插件市场查询（只读） | 2.15.0 |
 | `ctx.paths` | PluginPaths | 数据/临时目录（非能力代理） | 2.6.0 |
 | `ctx.logger` | stdlib Logger | 日志（非能力代理） | 1.0.0 |
 
@@ -68,7 +69,9 @@ SDK 在 `maibot_sdk/context.py` 的 `PluginContext._normalize_capability_result`
 因此下文 `chat.get_avatar`、`webui.claim_upload` 标注的「会抛错」就是第 2 类路径。
 
 **manifest 授权**：每个能力都要在 `_manifest.json` 的 `capabilities` 里声明能力名
-（不是代理方法名）。下文每节标题后标注需声明的名字。
+（不是代理方法名）。下文每节标题后标注需声明的名字。唯一例外是
+`api.replace_dynamic`：Host `host/authorization.py` 的 `_ALWAYS_ALLOWED_CAPABILITIES`
+只含这一个能力名，不写进 manifest 也能调用。
 
 ---
 
@@ -319,15 +322,19 @@ if info["status"] == "available":
 ## ctx.maisaka — Maisaka 上下文与主动任务
 
 需声明 manifest 能力：`maisaka.context.append` / `maisaka.context.resolve_image` /
-`maisaka.proactive.trigger`
+`maisaka.reply.generate` / `maisaka.proactive.trigger`
 
-`ctx.maisaka` 是入口对象，持两个子对象：`ctx.maisaka.context`（`MaisakaContextCapability`）
-与 `ctx.maisaka.proactive`（`MaisakaProactiveCapability`）。
+`ctx.maisaka` 是入口对象，持三个子对象：`ctx.maisaka.context`（`MaisakaContextCapability`）、
+`ctx.maisaka.reply`（`MaisakaReplyCapability`）与 `ctx.maisaka.proactive`
+（`MaisakaProactiveCapability`）。
 
 ```python
 # 子对象 self.context
 async def resolve_image(self, stream_id: str, source_id: str, index: int = 0) -> Any
-async def append(self, stream_id: str, segments: list[dict[str, Any]], *, visible_text: str = "", source_kind: str = "", message_id: str = "", **kwargs: Any) -> Any
+async def append(self, stream_id: str, segments: list[dict[str, Any]], *, visible_text: str = "", source_kind: str = "", message_id: str = "", replyable: bool = False, user_info: dict[str, Any] | None = None, **kwargs: Any) -> Any
+
+# 子对象 self.reply
+async def generate(self, stream_id: str, reference: str, *, format_instruction: str = "", model_name: str = "", timeout_ms: int | None = None) -> Any
 
 # 子对象 self.proactive
 async def trigger(self, stream_id: str, intent: str, *, reason: str = "", priority: str = "", metadata: dict[str, Any] | None = None, **kwargs: Any) -> Any
@@ -345,6 +352,18 @@ await ctx.maisaka.context.append(
     visible_text="给模型看的摘要",
 )
 
+# 追加上下文消息并保留真实作者（SDK 2.16.0+，message_id 与 user_info 必须真实）
+await ctx.maisaka.context.append(
+    stream_id,
+    [{"type": "text", "content": "上下文消息"}],
+    replyable=True,
+    message_id=real_message_id,
+    user_info={"user_id": "...", "platform": "qq"},
+)
+
+# 生成长文（SDK 2.16.0+，需 MaiBot 1.3.13+ Host；结果自行发送）
+result = await ctx.maisaka.reply.generate(stream_id, "请根据资料写一篇文章", format_instruction="800 字以内")
+
 # 触发 planner 主动处理
 await ctx.maisaka.proactive.trigger(stream_id, "提醒用户喝水", reason="定时任务", priority="high")
 
@@ -353,15 +372,22 @@ await ctx.maisaka.trigger_proactive(stream_id, intent)
 await ctx.maisaka.append_context(stream_id, segments)
 ```
 
-**这三个能力都没有解包键**，返回整个 dict：
-- `context.append` → `{"success": True, "index": int, "stream_id": str, "visible_text": str, "source_kind": str}`
+**这四个能力都没有解包键**，返回整个 dict：
+- `context.append` → `{"success": True, "index": int, "stream_id": str, "visible_text": str, "source_kind": str, "replyable": bool}`
+  （`replyable` 是本次调用的回显，可用来确认可回复上下文是否登记成功）
 - `proactive.trigger` → `{"success": True, **enqueue 结果}`（Host 的
   `_cap_maisaka_proactive_trigger`）
 - `resolve_image` → `{"success": True, "image": {"binary_data_base64": ..., "binary_hash": ...}}`
+- `reply.generate` → `{"success": True, "text": str, "selected_expression_ids": [...]}`，
+  失败为 `{"success": False, "error": str}`；该能力**不会自动发送**，正文交给插件自行处理
 
 **⚠️ 易错点与 Host 限制**：
 - 触发主动任务用的是 `proactive.trigger`（或别名 `trigger_proactive`），
   **不是** `maisaka.trigger(...)`——入口对象上没有这个方法
+- `reply.generate` 的 `reference` 非空且最多 500000 字符，`format_instruction` 最多 8000 字符；
+  `timeout_ms` 是 RPC 超时，不作为业务参数转发给 Host
+- `append` 的 `replyable=True` 时 `message_id` 必须是真实消息 ID、`user_info` 必须是真实作者，
+  否则 Host 拒绝
 - `proactive.trigger` 的 `stream_id` 必须是 Host 中**已存在**的聊天流，否则报
   「未找到已存在的聊天流」
 - `resolve_image` 的 `source_id` 可以是上下文消息编号（支持短别名）或
@@ -565,7 +591,8 @@ await ctx.component.reload_plugin("com.example.other")
 
 ## ctx.api — 插件间 API
 
-需声明 manifest 能力：`api.call` / `api.get` / `api.list` / `api.replace_dynamic`
+需声明 manifest 能力：`api.call` / `api.get` / `api.list`
+（`api.replace_dynamic` 是唯一免声明的能力，见上文「manifest 授权」）
 
 ```python
 async def call(self, api_name: str, *, version: str = "", **kwargs: Any) -> Any
@@ -774,6 +801,41 @@ data = Path(upload["path"]).read_bytes()
 
 ---
 
+## ctx.market — 插件市场查询（SDK 2.15.0+）
+
+需声明 manifest 能力：`market.search` / `market.get_detail` / `market.get_readme`
+
+```python
+async def search(self, query: str = "", *, category: str = "", page: int = 1, limit: int = 20, sort_by: MarketSort = "name", compatible_only: bool = False, include_manifest: bool = False, include_stats: bool = False, force_refresh: bool = False) -> dict[str, Any]
+async def get_detail(self, plugin_id: str, *, force_refresh: bool = False) -> dict[str, Any]
+async def get_readme(self, plugin_id: str, *, max_chars: int = 8000, prefer_local: bool = True, branch: str = "main", force_refresh: bool = False) -> dict[str, Any]
+```
+
+```python
+results = await ctx.market.search("麦麦", compatible_only=True, include_manifest=True)
+detail = await ctx.market.get_detail("com.example.other")
+readme = await ctx.market.get_readme("com.example.other", max_chars=4000)
+```
+
+`sort_by` 接受 8 个字面量：`name` / `downloads` / `likes` / `rating` /
+`downloads_growth_7d` / `likes_growth_7d` / `downloads_growth_30d` /
+`likes_growth_30d`。
+
+**解包键**：三个能力都是 `result`，非字典返回 SDK 直接抛 `TypeError`。
+
+**⚠️ 易错点与限制**：
+- `plugin.id` 是 manifest ID，`plugin.marketplace_id` 是市场登记 ID，两者可能不同
+- `source` 为 `official` / `cnb` / `github`；CNB 与 GitHub 信息源不支持
+  `include_stats=True`，也不支持统计类排序，传入会明确抛错
+- `max_chars` 取值 500～20000；每页 `limit` 最多 50 项
+- 这是**只读**能力，不提供安装、卸载或市场设置写入
+
+**缓存时效（Host 侧，决定何时会拿到旧数据）**：目录缓存 30 分钟，官方市场快照及
+版本索引缓存 5 分钟，远程 README 缓存 30 分钟；同一资源的并发请求会被合并。
+`force_refresh=True` 跳过有效缓存，强制回源。
+
+---
+
 ## 非能力代理对象
 
 ### ctx.paths（SDK 2.6.0+）
@@ -825,9 +887,10 @@ logger = logging.getLogger(__name__)
 | `person.get_id` / `person.get_value` / `person.get_id_by_name` | `ctx.person.*` |
 | `knowledge.search` | `ctx.knowledge.search` |
 | `tool.get_definitions` | `ctx.tool.get_definitions` |
-| `api.call` / `api.get` / `api.list` / `api.replace_dynamic` | `ctx.api.*` |
-| `maisaka.context.append` / `maisaka.context.resolve_image` / `maisaka.proactive.trigger` | `ctx.maisaka.*` |
+| `api.call` / `api.get` / `api.list`（`api.replace_dynamic` 免声明） | `ctx.api.*` |
+| `maisaka.context.append` / `maisaka.context.resolve_image` / `maisaka.reply.generate` / `maisaka.proactive.trigger` | `ctx.maisaka.*` |
 | `statistics.local.models` / `statistics.local.model_trend` / `statistics.local.token_trend` / `statistics.local.token_distribution` / `statistics.local.message_trend` / `statistics.local.tool_trend` / `statistics.local.online_time_trend` | `ctx.statistics.local.*` |
 | `render.html2png` | `ctx.render.html2png` |
 | `webui.claim_upload` | `ctx.webui.claim_upload` |
+| `market.search` / `market.get_detail` / `market.get_readme` | `ctx.market.*` |
 | （无） | `ctx.gateway.*`、`ctx.paths`、`ctx.logger` |

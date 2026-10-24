@@ -1,6 +1,6 @@
 # MaiBot 回复扩展（ReplyExtension）参考
 
-> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-17 逐行对照源码复核）
+> **校对基线：SDK 2.16.0 + MaiBot Host 1.3.15**（2026-10-24 依据 SDK 2.16.0 源码提取结果更新；回复扩展协议自 2.14.0 起无变化）
 > 源码位置：`maibot_sdk/components.py`（装饰器）、`maibot_sdk/types.py`（组件信息）、
 > Host 侧 `src/plugin_runtime/host/reply_extensions.py`（两阶段调度与消息组校验）
 > SDK 仓库内最权威文档：`maibot-plugin-sdk/docs/reply_extensions.md`（协议与语音示例以它为准）
@@ -26,7 +26,7 @@
 
 ## 依赖门槛
 
-- 需要支持 `REPLY_EXTENSION` 的 MaiBot 主程序（1.3.5 开发版本起）与 `maibot-plugin-sdk>=2.10.0`。
+- 需要支持 `REPLY_EXTENSION` 的 MaiBot 主程序（`docs/reply_extensions.md` 原文写「1.3.5 开发版本」，未给出最终发布的 Host 版本号）与 `maibot-plugin-sdk>=2.10.0`。
 - 正式插件应在依赖声明中写死该下限；本地联调可设 `MAIBOT_PLUGIN_SDK_PATH` 指向 SDK 仓库目录，重启插件 Runner 后加载本地 SDK。
 - 插件只依赖 SDK，无需导入主程序，也不需要改 Planner Hook。
 
@@ -222,3 +222,5 @@ async def reply_voice(self, *, phase, parameters, text, messages, **context):
   - ⚠️ 注意：**SDK 的 `CHANGELOG.md` 没有 2.10.0 条目**（版本标题从 `[2.11.0]` 直接跳到 `[2.9.0]`，属 CHANGELOG 遗漏），本条沿革并非出自 CHANGELOG，请勿因查不到而怀疑此记录。
 - **2.13.0**（2026-10-13）：`@Tool` 新增仅关键字参数 `platforms`；平台作用域随组件元数据传递，不进入模型调用参数 Schema。
 - **2.14.0**（2026-10-15）：`@ReplyExtension` 跟进 `platforms`，与 `@Tool` 共用 `_normalize_platforms`；Host 按当前聊天平台过滤 `reply.plugin_options` 中的扩展，并在准备、发送前各复查一次。
+- **2.15.0**（2026-10-21）：新增 `ctx.market.search/get_detail/get_readme` 只读能力（第 19 个能力代理），与回复扩展协议无直接关系；manifest 需分别声明同名能力。
+- **2.16.0**（2026-10-21）：新增 `ctx.maisaka.reply.generate()` 与 `ctx.maisaka.context.append()` 的 `replyable`/`user_info` 参数，同样不涉及回复扩展协议本身。回复扩展的装饰器签名、两阶段协议与消息组格式自 2.14.0 起无变化。

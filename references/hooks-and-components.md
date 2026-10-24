@@ -1,6 +1,6 @@
 # MaiBot Hook 系统与组件装饰器参考
 
-> **校对基线：SDK 2.14.0 + MaiBot Host 1.3.9**（2026-10-17 逐行对照源码复核）
+> **校对基线：SDK 2.16.0 + MaiBot Host 1.3.15**（2026-10-24 逐行对照源码复核）
 > SDK 侧源码：`maibot-plugin-sdk/maibot_sdk/components.py`、`maibot_sdk/types.py`
 > Host 侧源码：`src/plugin_runtime/host/hook_dispatcher.py`、`host/component_registry.py`、
 > `src/plugin_runtime/component_query.py`，以及 6 个 Hook 规格注册模块
@@ -223,6 +223,8 @@ grep -rhoE '"[a-z_]+(\.[a-z_]+){2,}"' --include=*.py MaiBot/src/plugin_runtime/ 
 - 两个 Hook 都只收 `message` 一个 schema 键（外加 Host 统一注入的 `hook_name`，见上文说明）；改写消息回带 `modified_kwargs={"message": {...}}`，Host 会尝试反序列化，
   失败则 warning 并沿用原消息。
 - 图片自动注释、入站改写类插件挂这里；注意 `timeoutMs=0`，实际超时走全局默认 60 秒，别在 Hook 里跑重推理。
+- kwargs 回写范围不同：`before_process` 的改写值会被 Host 从 `hook_result.kwargs` 读回并覆盖本地变量；
+  `after_process` 只检查 `aborted`，除 `message` 外不回写其它字段（`ChatBot._invoke_message_hook`）。
 
 ### chat.command.before_execute / chat.command.after_execute
 
@@ -249,6 +251,8 @@ grep -rhoE '"[a-z_]+(\.[a-z_]+){2,}"' --include=*.py MaiBot/src/plugin_runtime/ 
   `abort_message` 会作为失败提示回传。
 - `after_select` 可改 `selected_emoji_hash` 或 `selected_emoji` 来替换最终表情；`matched_emotion` 只读投影。
 - `sample_size` 是采样数量，触发处默认 20；Hook 侧用 `_coerce_positive_int` 解析，非正数回落默认。
+- 载荷里的 `emoji` 字段由 `_serialize_emoji_for_hook` 生成，含
+  `file_hash` / `file_name` / `full_path` / `description` / `emotions` / `query_count`。
 
 ### emoji.register.after_build_description
 
@@ -262,7 +266,8 @@ grep -rhoE '"[a-z_]+(\.[a-z_]+){2,}"' --include=*.py MaiBot/src/plugin_runtime/ 
 - `before_select`：`chat_id` / `chat_info` / `max_num` / `think_level` 必到；`abort` = 本轮不用表达方式。
   调用处还会读回 `candidates`、`max_num` 做候选过滤（这两个键不在 schema 里）。
 - `after_selection`：多出 `selected_expressions` / `selected_expression_ids`，改写即改写最终注入回复的表达方式。
-- `jargon_entries` 在 expression 链里是兼容字段，恒为空列表（黑话已由独立 learner 处理）。
+- `expression.learn.after_extract` 的 `jargon_entries` 在 expression 链里是兼容字段，恒为空列表
+  （黑话已由独立 learner 处理，schema 原文即此说明）。
 
 ### expression.learn.after_extract / before_upsert
 
@@ -275,7 +280,7 @@ grep -rhoE '"[a-z_]+(\.[a-z_]+){2,}"' --include=*.py MaiBot/src/plugin_runtime/ 
 - 触发点分别是 `JargonMiner.process_extracted_entries` 与 `JargonMiner.infer_meaning`。
 - `before_persist`：去重后的 `entries` 写库前，可改列表或跳过持久化。
 - `before_finalize`：推断完成、写回前，10 个字段全是判定与含义结果（`is_jargon` / `meaning` / `is_complete` /
-  `last_inference_count` 等），改写即改写写回数据库的内容。
+  `last_inference_count` 等），改写即改写写回数据库的内容；`comparison_result` 只读，不回读。
 - ⚠️ `jargon.query.*` 系列在源码中不存在，零命中。
 
 ### maisaka.planner.before_request / after_response
@@ -329,6 +334,8 @@ kwargs 15 个，全部 required：`items`、`item_schema_version`、`session_id`
   `selected_expression_ids`、`reply_tool_args`、`prompt_tokens`、`completion_tokens`、`total_tokens`。
 - 5 个 optional：`retry`（置 `True` 要求重新生成）、`retry_reason`（重新生成的约束原因）、
   `matched_regex`、`matched_regex_pattern`、`matched_regex_description`（触发重新生成的规则信息）。
+  `matched_regex*` 三个只进日志与 retry 事件记录；`retry_reason` 会经 `_build_retry_constraint_sentence`
+  变成下一轮的提示词约束；`retry` 经 `_coerce_hook_bool` 读取，非布尔按 `False` 处理。
 - `response` 是正文的兼容只读投影，改写只替换正文 Item；`output_items` 改动受 schema 版本校验。
 - 不允许 abort；重试次数受 `max_retries` 约束，别在 `retry` 上做无界循环。
 
@@ -341,6 +348,7 @@ kwargs 15 个，全部 required：`items`、`item_schema_version`、`session_id`
 - 三个策略字段必须是**布尔类型**，Host 用 `_require_hook_bool` 强校验，非布尔直接抛错。
 - 可完全跳过文本后处理（`skip_post_process=True`），或分别关闭拆分与中文错别字注入。
 - 该 Hook 不影响富回复附件组装，也不允许 abort。
+- 三个策略字段的调用方默认值为 `{"skip_post_process": False, "enable_splitter": True, "enable_chinese_typo": True}`。
 
 ---
 
@@ -726,7 +734,6 @@ async def reply_voice(self, *, phase, parameters, text, messages, **context):
 - Host 对 `prepare` 只接受字符串 `extra_prompt` 这一个键，对 `before_send` 只接受 `messages` 键；
   **多一个键即视为无效返回值，直接让本次 reply 失败**。
 - 完整协议（消息组校验、段类型、语音示例、失败语义）见 `references/reply-extensions.md`。
-- 依赖门槛：`maibot-plugin-sdk>=2.10.0` 且主程序支持 `REPLY_EXTENSION`（1.3.5 开发版本起）。
 
 ---
 
